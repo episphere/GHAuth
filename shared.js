@@ -15,7 +15,7 @@ const fetchSecrets = async () => {
     const client = new SecretManagerServiceClient();
     let fetchedSecrets = {};
 
-    for (const [key, value] of Object.entries(secretsToFetch)) {
+    for (const [key, value] of Object.entries(secrets)) {
         const [version] = await client.accessSecretVersion({ name: value });
         fetchedSecrets[key] = version.payload.data.toString();
     }
