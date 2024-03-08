@@ -1,8 +1,8 @@
-const auth = async (req, res) => {
+const ghauth = async (req, res) => {
 
     console.log("authenticating user...");
 }
 
 module.exports = {
-    auth
+    ghauth
 }

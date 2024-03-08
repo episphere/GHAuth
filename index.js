@@ -1,3 +1,3 @@
-const { auth } = require('./auth');
+const { ghauth } = require('./auth');
 
-exports.auth = auth;
+exports.ghauth = ghauth;
