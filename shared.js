@@ -1,3 +1,5 @@
+const {SecretManagerServiceClient} = require('@google-cloud/secret-manager');
+
 const setHeaders = (res) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Headers','Accept,Content-Type,Content-Length,Accept-Encoding,X-CSRF-Token,Authorization');
