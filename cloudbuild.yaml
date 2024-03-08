@@ -4,6 +4,6 @@ steps:
 - name: 'gcr.io/cloud-builders/gcloud'
   args: ['functions', 'add-iam-policy-binding', 'ghauth', '--member=allUsers', '--role=${_ROLE}']
 substitutions:
-  _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-dev/repos/github_episphere_GCP-CloudFunction/moveable-aliases/main
+  _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-dev/repos/github_episphere_ghauth/moveable-aliases/main
   _RUNTIME: nodejs20
   _ROLE: roles/cloudfunctions.invoker
