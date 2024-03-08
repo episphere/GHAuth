@@ -1,8 +1,8 @@
 steps:
 - name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'deploy', 'auth', '--trigger-http', '--runtime=${_RUNTIME}', '--source=${_SOURCE}']
+  args: ['functions', 'deploy', 'ghauth', '--trigger-http', '--runtime=${_RUNTIME}', '--source=${_SOURCE}']
 - name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'add-iam-policy-binding', 'auth', '--member=allUsers', '--role=${_ROLE}']
+  args: ['functions', 'add-iam-policy-binding', 'ghauth', '--member=allUsers', '--role=${_ROLE}']
 substitutions:
   _SOURCE: https://source.developers.google.com/projects/nih-nci-dceg-connect-dev/repos/github_episphere_connectfaas/moveable-aliases/dev
   _RUNTIME: nodejs20
