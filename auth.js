@@ -7,11 +7,11 @@ const ghauth = async (req, res) => {
     if(req.method === 'OPTIONS') return res.status(200).json({code: 200});
 
     const api = req.query.api;
+    console.log(`API: ${api}`);
 
     if (api === 'accessToken') {
         try {
-
-            console.log(`POST request received for ${api} API`);
+            if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
 
             const secrets = await fetchSecrets();
 
@@ -35,6 +35,24 @@ const ghauth = async (req, res) => {
             const response = await tokenResponse.json();
             res.status(200).json(response);
 
+        } catch (error) {
+            console.error('Error:', error);
+            res.status(500).json({error: 'Internal Server Error'});
+        }
+    }
+
+    if (api === 'getUser') {
+        try {
+            if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
+
+            const token = req.headers.authorization.replace('token','').trim();
+
+            const octokit = new Octokit({
+                auth: token
+            });
+
+            const response = await octokit.request('GET /user');
+            res.status(200).json(response);
         } catch (error) {
             console.error('Error:', error);
             res.status(500).json({error: 'Internal Server Error'});
