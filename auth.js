@@ -16,8 +16,7 @@ const ghauth = async (req, res) => {
             const secrets = await fetchSecrets();
 
             const code = req.body.code;
-            console.log(code);
-            const REDIRECT_URI = 'http://localhost:5000/';
+            const redirect = req.body.redirect;
 
             const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
                 method: 'POST',
@@ -29,7 +28,7 @@ const ghauth = async (req, res) => {
                     client_id: secrets.client_id,
                     client_secret: secrets.client_secret,
                     code: code,
-                    redirect_uri: REDIRECT_URI
+                    redirect_uri: redirect
                 })
             });
     
