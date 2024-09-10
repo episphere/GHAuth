@@ -64,7 +64,8 @@ const ghauth = async (req, res) => {
             if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
 
             const token = req.headers.authorization.replace('Bearer','').trim();
-
+            console.log(`Token: ${token}`);
+            
             const octokit = new Octokit({
                 auth: token
             });
