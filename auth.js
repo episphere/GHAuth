@@ -53,7 +53,11 @@ const ghauth = async (req, res) => {
             });
 
             const response = await octokit.request('GET /user');
+
+            const rateLimit = await octokit.request('GET /rate_limit');
+            console.log(rateLimit);
             res.status(200).json(response);
+            
         } catch (error) {
             console.error('Error:', error);
             res.status(500).json({error: 'Internal Server Error'});
