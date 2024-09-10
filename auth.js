@@ -28,7 +28,8 @@ const ghauth = async (req, res) => {
                     client_id: secrets.client_id,
                     client_secret: secrets.client_secret,
                     code: code,
-                    redirect_uri: redirect
+                    redirect_uri: redirect,
+                    scope: 'repo'
                 })
             });
     
@@ -64,8 +65,7 @@ const ghauth = async (req, res) => {
             if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
 
             const token = req.headers.authorization.replace('Bearer','').trim();
-            console.log(`Token: ${token}`);
-            
+
             const octokit = new Octokit({
                 auth: token
             });
