@@ -45,7 +45,6 @@ const ghauth = async (req, res) => {
         try {
             if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
 
-            console.log(req.headers);
             const token = req.headers.authorization.replace('Bearer','').trim();
 
             const octokit = new Octokit({
@@ -53,11 +52,7 @@ const ghauth = async (req, res) => {
             });
 
             const response = await octokit.request('GET /user');
-
-            const rateLimit = await octokit.request('GET /rate_limit');
-            console.log(rateLimit);
             res.status(200).json(response);
-            
         } catch (error) {
             console.error('Error:', error);
             res.status(500).json({error: 'Internal Server Error'});
@@ -68,7 +63,6 @@ const ghauth = async (req, res) => {
         try {
             if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
 
-            console.log(req.headers);
             const token = req.headers.authorization.replace('Bearer','').trim();
 
             const octokit = new Octokit({
@@ -76,6 +70,11 @@ const ghauth = async (req, res) => {
             });
 
             const { owner, repo, path, message, content } = req.body;
+            console.log(`Owner: ${owner}`);
+            console.log(`Repo: ${repo}`);
+            console.log(`Path: ${path}`);
+            console.log(`Message: ${message}`);
+            console.log(`Content: ${content}`);
 
             const response = await octokit.request(`PUT /repos/{owner}/{repo}/contents/{path}`, {
                 owner,
