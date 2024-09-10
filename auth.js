@@ -29,7 +29,6 @@ const ghauth = async (req, res) => {
                     client_secret: secrets.client_secret,
                     code: code,
                     redirect_uri: redirect,
-                    scope: 'repo'
                 })
             });
     
