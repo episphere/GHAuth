@@ -82,7 +82,6 @@ const ghauth = async (req, res) => {
                 path,
                 message,
                 content,
-                sha,
                 headers: {
                   'X-GitHub-Api-Version': '2022-11-28'
                 }
