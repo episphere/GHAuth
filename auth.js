@@ -13,7 +13,7 @@ const ghauth = async (req, res) => {
         try {
             if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
 
-            const environment = req.body.environment;
+            const environment = req.query.environment;
             const local = environment === 'dev' ? true : false;
 
             const secrets = await fetchSecrets(local);
