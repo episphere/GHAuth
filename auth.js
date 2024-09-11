@@ -16,6 +16,8 @@ const ghauth = async (req, res) => {
             const environment = req.query.environment;
             const local = environment === 'dev' ? true : false;
 
+            console.log(`Local Development: ${environment}`);
+
             const secrets = await fetchSecrets(local);
 
             const code = req.body.code;
