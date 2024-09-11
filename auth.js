@@ -69,7 +69,7 @@ const ghauth = async (req, res) => {
                 auth: token
             });
 
-            const { owner, repo, path, message, content } = req.body;
+            const { owner, repo, path, message, content, sha } = req.body;
             console.log(`Owner: ${owner}`);
             console.log(`Repo: ${repo}`);
             console.log(`Path: ${path}`);
