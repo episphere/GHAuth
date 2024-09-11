@@ -6,11 +6,17 @@ const setHeaders = (res) => {
     res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
 }
 
-const fetchSecrets = async () => {
-    const secrets = {
-        client_id: process.env.GITHUB_CLIENT_ID,
-        client_secret: process.env.GITHUB_CLIENT_SECRET
-    };
+const fetchSecrets = async (local) => {
+    const secrets = {};
+
+    if (local) {
+        secrets.client_id = process.env.GITHUB_CLIENT_ID_DEV;
+        secrets.client_secret = process.env.GITHUB_CLIENT_SECRET_DEV;
+    }
+    else{
+        secrets.client_id = process.env.GITHUB_CLIENT_ID;
+        secrets.client_secret = process.env.GITHUB_CLIENT_SECRET;
+    }
 
     const client = new SecretManagerServiceClient();
     let fetchedSecrets = {};
