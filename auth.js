@@ -98,6 +98,37 @@ const ghauth = async (req, res) => {
             res.status(500).json({error: 'Internal Server Error'});
         }
     }
+
+    if (api === 'getFiles') {
+        try {
+            if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
+
+            const token = req.headers.authorization.replace('Bearer','').trim();
+
+            const octokit = new Octokit({
+                auth: token
+            });
+
+            const { owner, repo, path } = req.query;
+            console.log(`Owner: ${owner}`);
+            console.log(`Repo: ${repo}`);
+            console.log(`Path: ${path}`);
+
+            const response = await octokit.request(`GET /repos/{owner}/{repo}/contents/{path}`, {
+                owner,
+                repo,
+                path,
+                headers: {
+                  'X-GitHub-Api-Version': '2022-11-28'
+                }
+            });
+
+            res.status(200).json(response);
+        } catch (error) {
+            console.error('Error:', error);
+            res.status(500).json({error: 'Internal Server Error'});
+        }
+    }
     
 }
 
