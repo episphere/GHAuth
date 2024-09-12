@@ -64,7 +64,7 @@ const ghauth = async (req, res) => {
         }
     }
 
-    if (api === 'createFile') {
+    if (api === 'addFile') {
         try {
             if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
 
