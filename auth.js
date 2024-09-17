@@ -165,7 +165,7 @@ const ghauth = async (req, res) => {
 
             const { owner, repo, path, message, sha } = req.body;
 
-            const response = await octokit.request(`PUT /repos/{owner}/{repo}/contents/{path}`, {
+            const response = await octokit.request(`DELETE /repos/{owner}/{repo}/contents/{path}`, {
                 owner,
                 repo,
                 path,
