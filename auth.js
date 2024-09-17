@@ -152,6 +152,36 @@ const ghauth = async (req, res) => {
             res.status(500).json({error: 'Internal Server Error'});
         }
     }
+
+    if (api === 'deleteFile') {
+        try {
+            if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
+
+            const token = req.headers.authorization.replace('Bearer','').trim();
+
+            const octokit = new Octokit({
+                auth: token
+            });
+
+            const { owner, repo, path, message, sha } = req.body;
+
+            const response = await octokit.request(`PUT /repos/{owner}/{repo}/contents/{path}`, {
+                owner,
+                repo,
+                path,
+                message,
+                sha,
+                headers: {
+                  'X-GitHub-Api-Version': '2022-11-28'
+                }
+            });
+
+            res.status(200).json(response);
+        } catch (error) {
+            console.error('Error:', error);
+            res.status(500).json({error: 'Internal Server Error'});
+        }
+    }
 }
 
 module.exports = {
