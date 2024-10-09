@@ -145,7 +145,9 @@ const ghauth = async (req, res) => {
                 }
             });
 
-            console.log(response);
+            const zipData = Buffer.from(response.data);
+
+            console.log(zipData);
 
             res.status(200).json(response);
         } catch (error) {
