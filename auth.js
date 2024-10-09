@@ -94,6 +94,38 @@ const ghauth = async (req, res) => {
         }
     }
 
+    if (api === 'addDictionary') {
+        try {
+            if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
+
+            const token = req.headers.authorization.replace('Bearer','').trim();
+
+            const octokit = new Octokit({
+                auth: token
+            });
+
+            const { owner, repo, path, message, files } = req.body;
+
+            for (const file of files) {
+                const response = await octokit.request(`PUT /repos/{owner}/{repo}/contents/{path}`, {
+                    owner,
+                    repo,
+                    path: `${path}/${file.name}`,
+                    message,
+                    content: file.content,
+                    headers: {
+                        'X-GitHub-Api-Version': '2022-11-28'
+                    }
+                });
+            }
+
+            res.status(200).json({response: 'Files added successfully'});
+        } catch (error) {
+            console.error('Error:', error);
+            res.status(500).json({error: 'Internal Server Error'});
+        }
+    }
+
     if (api === 'updateFile') {
         try {
             if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
