@@ -1,4 +1,4 @@
-const { setHeaders, fetchSecrets, updateIndexFile } = require('./shared');
+const { setHeaders, fetchSecrets, updateIndexFile, removeFromIndexFile } = require('./shared');
 const { Octokit } = require('octokit');
 
 const ghauth = async (req, res) => {
@@ -212,6 +212,9 @@ const ghauth = async (req, res) => {
                   'X-GitHub-Api-Version': '2022-11-28'
                 }
             });
+
+            // Step 2: Update index.json
+            await removeFromIndexFile(octokit, owner, repo, path);
 
             res.status(200).json(response);
         } catch (error) {
