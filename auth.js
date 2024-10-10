@@ -122,6 +122,9 @@ const ghauth = async (req, res) => {
                 }
             });
 
+            // Step 2: Update index.json
+            await updateIndexFile(octokit, owner, repo, path, content);
+
             res.status(200).json(response);
         } catch (error) {
             console.error('Error:', error);
