@@ -76,6 +76,7 @@ const ghauth = async (req, res) => {
 
             const { owner, repo, path, message, content } = req.body;
 
+            // Step 1: Add the new file
             const response = await octokit.request(`PUT /repos/{owner}/{repo}/contents/{path}`, {
                 owner,
                 repo,
@@ -86,6 +87,9 @@ const ghauth = async (req, res) => {
                   'X-GitHub-Api-Version': '2022-11-28'
                 }
             });
+
+            // Step 2: Update index.json
+            await updateIndexFile(octokit, owner, repo, path, content);
 
             res.status(200).json(response);
         } catch (error) {
@@ -147,8 +151,7 @@ const ghauth = async (req, res) => {
 
             const zipData = Buffer.from(response.data);
 
-            console.log(zipData);
-
+            res.set('Content-Type', 'application/zip');
             res.status(200).send(zipData);
         } catch (error) {
             console.error('Error:', error);

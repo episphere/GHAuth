@@ -29,7 +29,70 @@ const fetchSecrets = async (local) => {
     return fetchedSecrets;
 }
 
+const updateIndexFile = async (octokit, owner, repo, filePath, content) => {
+    try {
+        const indexPath = 'index.json';
+        let indexContent = {};
+        let indexSha = null;
+    
+        // Step 1: Fetch the existing index.json (if it exists)
+        try {
+            const indexResponse = await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
+                owner,
+                repo,
+                path: indexPath,
+                headers: {
+                    'X-GitHub-Api-Version': '2022-11-28',
+                },
+            });
+    
+            const indexData = Buffer.from(indexResponse.data.content, 'base64').toString('utf-8');
+            indexContent = JSON.parse(indexData);
+            indexSha = indexResponse.data.sha;
+        } catch (error) {
+            // If index.json doesn't exist, we'll create a new one
+            if (error.status !== 404) {
+                throw error;
+            }
+        }
+    
+        // Ensure indexContent is an object
+        if (!indexContent || typeof indexContent !== 'object') {
+            indexContent = {};
+        }
+    
+        // Step 2: Read the "key" value from the file content
+        const fileData = Buffer.from(content, 'base64').toString('utf-8');
+        const fileJson = JSON.parse(fileData);
+        const keyValue = fileJson.key || '';
+    
+        // Step 3: Update the indexContent with the new/updated entry
+        indexContent[filePath] = keyValue;
+    
+        // Step 4: Commit the updated index.json
+        const updatedIndexContent = Buffer.from(JSON.stringify(indexContent, null, 2)).toString('base64');
+    
+        const commitMessage = `Update index.json for ${filePath}`;
+    
+        await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
+            owner,
+            repo,
+            path: indexPath,
+            message: commitMessage,
+            content: updatedIndexContent,
+            sha: indexSha, // If indexSha is null, it will create the file
+            headers: {
+                'X-GitHub-Api-Version': '2022-11-28',
+            },
+        });
+    } catch (error) {
+        console.error('Error updating index.json:', error);
+        throw error;
+    }
+};
+ 
 module.exports = {
     setHeaders,
-    fetchSecrets
+    fetchSecrets,
+    updateIndexFile
 }
