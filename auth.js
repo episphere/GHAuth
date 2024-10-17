@@ -162,6 +162,25 @@ const ghauth = async (req, res) => {
         }
     }
 
+    if (api === 'getUserRepositories') {
+        try {
+            if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
+
+            const token = req.headers.authorization.replace('Bearer','').trim();
+
+            const octokit = new Octokit({
+                auth: token
+            });
+
+            const response = await octokit.request('GET /user/repos');
+            res.status(200).json(response);
+        }
+        catch (error) {
+            console.error('Error:', error);
+            res.status(500).json({error: 'Internal Server Error'});
+        }
+    }
+
     if (api === 'getFiles') {
         try {
             if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
