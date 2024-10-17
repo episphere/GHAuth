@@ -172,7 +172,12 @@ const ghauth = async (req, res) => {
                 auth: token
             });
 
-            const response = await octokit.request('GET /user/repos');
+            const response = await octokit.request('GET /user/repos', {
+                per_page: 100,
+                headers: {
+                  'X-GitHub-Api-Version': '2022-11-28'
+                }
+            });
             res.status(200).json(response);
         }
         catch (error) {
