@@ -173,6 +173,7 @@ const ghauth = async (req, res) => {
             });
 
             const response = await octokit.request('GET /user/repos', {
+                affiliation: 'owner, collaborator',
                 per_page: 100,
                 headers: {
                   'X-GitHub-Api-Version': '2022-11-28'
