@@ -88,8 +88,11 @@ const ghauth = async (req, res) => {
                 }
             });
 
-            // Step 2: Update index.json
-            await updateIndexFile(octokit, owner, repo, path, content);
+            // If file is '.gitkeep' then don't update index.json
+            if (!path.endsWith('.gitkeep')) {
+                // Step 2: Update index.json
+                await updateIndexFile(octokit, owner, repo, path, content);
+            }
 
             res.status(200).json(response);
         } catch (error) {
