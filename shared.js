@@ -74,19 +74,25 @@ const updateIndexFile = async (octokit, owner, repo, filePath, content) => {
     
         const commitMessage = `Update index.json for ${filePath}`;
     
-        console.log(sha);
-        const response = await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
+        // Prepare the request parameters
+        const params = {
             owner,
             repo,
             path: indexPath,
             message: commitMessage,
             content: updatedIndexContent,
-            sha: indexSha, // If indexSha is null, it will create the file
             headers: {
                 'X-GitHub-Api-Version': '2022-11-28',
             },
-        });
-        console.log(response);
+        };
+
+        // Include 'sha' only if indexSha is defined (not null)
+        if (indexSha) {
+            params.sha = indexSha;
+        }
+
+        // Make the API call
+        await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', params);
     } catch (error) {
         console.error('Error updating index.json:', error);
         throw error;
