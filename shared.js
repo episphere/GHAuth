@@ -31,7 +31,13 @@ const fetchSecrets = async (local) => {
 
 const updateIndexFile = async (octokit, owner, repo, filePath, content) => {
     try {
-        const indexPath = 'index.json';
+        let directoryPath = '';
+
+        if (filePath.includes('/')) {
+            directoryPath = filePath.substring(0, filePath.lastIndexOf('/'));
+        }
+
+        const indexPath = directoryPath ? `${directoryPath}/index.json` : 'index.json';
         let indexContent = {};
         let indexSha = null;
     
@@ -67,7 +73,8 @@ const updateIndexFile = async (octokit, owner, repo, filePath, content) => {
         const keyValue = fileJson.key || '';
     
         // Step 3: Update the indexContent with the new/updated entry
-        indexContent[filePath] = keyValue;
+        const fileName = filePath.substring(filePath.lastIndexOf('/') + 1);
+        indexContent[fileName] = keyValue;
     
         // Step 4: Commit the updated index.json
         const updatedIndexContent = Buffer.from(JSON.stringify(indexContent, null, 2)).toString('base64');
@@ -103,7 +110,6 @@ const updateIndexFile = async (octokit, owner, repo, filePath, content) => {
 
 const removeFromIndexFile = async (octokit, owner, repo, filePath) => {
     try {
-        const indexPath = 'index.json';
         let indexContent = {};
         let indexSha = null;
     
