@@ -90,9 +90,11 @@ const updateIndexFile = async (octokit, owner, repo, filePath, content) => {
         if (indexSha) {
             params.sha = indexSha;
         }
-
+        console.log(indexSha);    
+        console.log(params);
         // Make the API call
-        await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', params);
+        const response = await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', params);
+        console.log(response);
     } catch (error) {
         console.error('Error updating index.json:', error);
         throw error;
