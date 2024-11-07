@@ -74,7 +74,8 @@ const updateIndexFile = async (octokit, owner, repo, filePath, content) => {
     
         const commitMessage = `Update index.json for ${filePath}`;
     
-        await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
+        console.log(sha);
+        const response = await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
             owner,
             repo,
             path: indexPath,
@@ -85,6 +86,7 @@ const updateIndexFile = async (octokit, owner, repo, filePath, content) => {
                 'X-GitHub-Api-Version': '2022-11-28',
             },
         });
+        console.log(response);
     } catch (error) {
         console.error('Error updating index.json:', error);
         throw error;
@@ -124,7 +126,6 @@ const removeFromIndexFile = async (octokit, owner, repo, filePath) => {
     
         const commitMessage = `Update index.json after deleting ${filePath}`;
     
-        console.log(sha);
         const response = await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
             owner,
             repo,
@@ -136,7 +137,6 @@ const removeFromIndexFile = async (octokit, owner, repo, filePath) => {
                 'X-GitHub-Api-Version': '2022-11-28',
             },
         });
-        console.log(response);
     } catch (error) {
       console.error('Error updating index.json:', error);
       throw error;
