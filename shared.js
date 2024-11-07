@@ -124,7 +124,8 @@ const removeFromIndexFile = async (octokit, owner, repo, filePath) => {
     
         const commitMessage = `Update index.json after deleting ${filePath}`;
     
-        await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
+        console.log(sha);
+        const response = await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
             owner,
             repo,
             path: indexPath,
@@ -135,6 +136,7 @@ const removeFromIndexFile = async (octokit, owner, repo, filePath) => {
                 'X-GitHub-Api-Version': '2022-11-28',
             },
         });
+        console.log(response);
     } catch (error) {
       console.error('Error updating index.json:', error);
       throw error;
