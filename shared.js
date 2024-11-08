@@ -110,6 +110,13 @@ const updateIndexFile = async (octokit, owner, repo, filePath, content) => {
 
 const removeFromIndexFile = async (octokit, owner, repo, filePath) => {
     try {
+        let directoryPath = '';
+
+        if (filePath.includes('/')) {
+            directoryPath = filePath.substring(0, filePath.lastIndexOf('/'));
+        }
+
+        const indexPath = directoryPath ? `${directoryPath}/index.json` : 'index.json';
         let indexContent = {};
         let indexSha = null;
     
@@ -140,7 +147,7 @@ const removeFromIndexFile = async (octokit, owner, repo, filePath) => {
     
         const commitMessage = `Update index.json after deleting ${filePath}`;
     
-        const response = await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
+        await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
             owner,
             repo,
             path: indexPath,
