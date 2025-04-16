@@ -48,9 +48,15 @@ const ghauth = async (req, res) => {
 
     if (api === 'logout') {
         try {
-            if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
+            if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
 
             const token = req.headers.authorization.replace('Bearer','').trim();
+            const environment = req.query.environment;
+            const local = environment === 'dev' ? true : false;
+
+            console.log(`Local Development: ${environment}`);
+
+            const secrets = await fetchSecrets(local);
 
             const octokit = new Octokit({
                 auth: token
