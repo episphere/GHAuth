@@ -46,43 +46,6 @@ const ghauth = async (req, res) => {
         }
     }
 
-    if (api === 'logout') {
-        try {
-            if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
-
-            const token = req.headers.authorization.replace('Bearer','').trim();
-            const environment = req.query.environment;
-            const local = environment === 'dev' ? true : false;
-            const secrets = await fetchSecrets(local);
-            const authString = Buffer.from(`${secrets.client_id}:${secrets.client_secret}`).toString('base64');
-
-            console.log(`Local Development: ${environment}`);
-        
-            const response = await fetch('https://api.github.com/applications/' + 
-                `${secrets.client_id}/token`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Basic ${authString}`,
-                    'Accept': 'application/vnd.github+json',
-                    'X-GitHub-Api-Version': '2022-11-28'
-                },
-                body: JSON.stringify({
-                    access_token: token
-                })
-            });
-            
-            if (response.status === 204) {
-                res.status(200).json({success: true, message: 'Token revoked successfully'});
-            } else {
-                const errorData = await response.json();
-                res.status(response.status).json(errorData);
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            res.status(500).json({error: 'Internal Server Error'});
-        }
-    }
-
     if (api === 'getUser') {
         try {
             if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
