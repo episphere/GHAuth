@@ -46,6 +46,30 @@ const ghauth = async (req, res) => {
         }
     }
 
+    if (api === 'logout') {
+        try {
+            if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
+
+            const token = req.headers.authorization.replace('Bearer','').trim();
+
+            const octokit = new Octokit({
+                auth: token
+            });
+
+            const response = await octokit.request('DELETE /applications/{client_id}/token', {
+                client_id: secrets.client_id,
+                access_token: token,
+                headers: {
+                  'X-GitHub-Api-Version': '2022-11-28'
+                }
+            });
+            res.status(200).json(response);
+        } catch (error) {
+            console.error('Error:', error);
+            res.status(500).json({error: 'Internal Server Error'});
+        }
+    }
+
     if (api === 'getUser') {
         try {
             if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
