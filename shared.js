@@ -163,10 +163,15 @@ const removeFromIndexFile = async (octokit, owner, repo, filePath) => {
       throw error;
     }
 }
+
+const generateConceptID = () => {
+    return Math.floor(100000000 + Math.random() * 900000000);
+}
  
 module.exports = {
     setHeaders,
     fetchSecrets,
     updateIndexFile,
+    generateConceptID,
     removeFromIndexFile
 }

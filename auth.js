@@ -250,6 +250,50 @@ const ghauth = async (req, res) => {
             res.status(500).json({error: 'Internal Server Error'});
         }
     }
+
+    if (api === 'getConcept') {
+        try {
+            if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
+
+            const token = req.headers.authorization.replace('Bearer','').trim();
+
+            const octokit = new Octokit({
+                auth: token
+            });
+
+            const { owner, repo, path } = req.query;
+
+            const response = await octokit.request(`GET /repos/{owner}/{repo}/contents/{path}`, {
+                owner,
+                repo,
+                path,
+                headers: {
+                  'X-GitHub-Api-Version': '2022-11-28'
+                }
+            });
+
+
+            // get keys from response file json
+            const file = Buffer.from(response.data.content, 'base64').toString('utf-8');
+            const content = JSON.parse(file);
+            const keys = Object.keys(content);
+
+            let flag = true;
+            let conceptID;
+
+            while (flag) {
+                conceptID = generateConceptID();
+                if (!keys.includes(conceptID.toString())) {
+                    flag = false;
+                }
+            }
+
+            res.status(200).json({ conceptID });
+        } catch (error) {
+            console.error('Error:', error);
+            res.status(500).json({error: 'Internal Server Error'});
+        }
+    }
 }
 
 module.exports = {
