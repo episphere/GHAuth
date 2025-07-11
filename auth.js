@@ -1,4 +1,4 @@
-const { setHeaders, fetchSecrets, updateIndexFile, removeFromIndexFile } = require('./shared');
+const { setHeaders, fetchSecrets, updateIndexFile, removeFromIndexFile, generateConceptID } = require('./shared');
 const { Octokit } = require('octokit');
 
 const ghauth = async (req, res) => {
