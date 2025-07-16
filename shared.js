@@ -74,10 +74,10 @@ const updateIndexFile = async (octokit, owner, repo, filePath, fileContent, file
         let keyValue;
         
         if (fileType === 'index') {
-            keyValue = fileJson.key || '';
+            keyValue = fileJson['key'] || '';
         }
         else if (fileType === 'object') {
-            keyValue = fileJson.object_type || '';
+            keyValue = fileJson['object_type'] || '';
         }
 
         // Step 3: Update the content with the new/updated entry
