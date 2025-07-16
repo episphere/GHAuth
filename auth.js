@@ -91,7 +91,8 @@ const ghauth = async (req, res) => {
             // If file is '.gitkeep' then don't update index.json
             if (!path.endsWith('.gitkeep')) {
                 // Step 2: Update index.json
-                await updateIndexFile(octokit, owner, repo, path, content);
+                await updateIndexFile(octokit, owner, repo, path, content, 'index');
+                await updateIndexFile(octokit, owner, repo, path, content, 'object');
             }
 
             res.status(200).json(response);

@@ -29,7 +29,7 @@ const fetchSecrets = async (local) => {
     return fetchedSecrets;
 }
 
-const updateIndexFile = async (octokit, owner, repo, filePath, content) => {
+const updateIndexFile = async (octokit, owner, repo, filePath, fileContent, fileType) => {
     try {
         let directoryPath = '';
 
@@ -37,9 +37,9 @@ const updateIndexFile = async (octokit, owner, repo, filePath, content) => {
             directoryPath = filePath.substring(0, filePath.lastIndexOf('/'));
         }
 
-        const indexPath = directoryPath ? `${directoryPath}/index.json` : 'index.json';
-        let indexContent = {};
-        let indexSha = null;
+        const indexPath = directoryPath ? `${directoryPath}/${fileType}.json` : `${fileType}.json`;
+        let content = {};
+        let sha = null;
     
         // Step 1: Fetch the existing index.json (if it exists)
         try {
@@ -53,32 +53,40 @@ const updateIndexFile = async (octokit, owner, repo, filePath, content) => {
             });
     
             const indexData = Buffer.from(indexResponse.data.content, 'base64').toString('utf-8');
-            indexContent = JSON.parse(indexData);
-            indexSha = indexResponse.data.sha;
+            content = JSON.parse(indexData);
+            sha = indexResponse.data.sha;
         } catch (error) {
             // If index.json doesn't exist, we'll create a new one
             if (error.status !== 404) {
                 throw error;
             }
         }
-    
-        // Ensure indexContent is an object
-        if (!indexContent || typeof indexContent !== 'object') {
-            indexContent = {};
+
+        // Ensure content is an object
+        if (!content || typeof content !== 'object') {
+            content = {};
         }
     
         // Step 2: Read the "key" value from the file content
-        const fileData = Buffer.from(content, 'base64').toString('utf-8');
+        const fileData = Buffer.from(fileContent, 'base64').toString('utf-8');
         const fileJson = JSON.parse(fileData);
-        const keyValue = fileJson.key || '';
-    
-        // Step 3: Update the indexContent with the new/updated entry
+
+        let keyValue;
+        
+        if (fileType === 'index') {
+            keyValue = fileJson.key || '';
+        }
+        else if (fileType === 'object') {
+            keyValue = fileJson.object_type || '';
+        }
+
+        // Step 3: Update the content with the new/updated entry
         const fileName = filePath.substring(filePath.lastIndexOf('/') + 1);
-        indexContent[fileName] = keyValue;
-    
+        content[fileName] = keyValue;
+
         // Step 4: Commit the updated index.json
-        const updatedIndexContent = Buffer.from(JSON.stringify(indexContent, null, 2)).toString('base64');
-    
+        const updatedContent = Buffer.from(JSON.stringify(content, null, 2)).toString('base64');
+
         const commitMessage = `Update index.json for ${filePath}`;
     
         // Prepare the request parameters
@@ -87,21 +95,18 @@ const updateIndexFile = async (octokit, owner, repo, filePath, content) => {
             repo,
             path: indexPath,
             message: commitMessage,
-            content: updatedIndexContent,
+            content: updatedContent,
             headers: {
                 'X-GitHub-Api-Version': '2022-11-28',
             },
         };
 
-        // Include 'sha' only if indexSha is defined (not null)
-        if (indexSha) {
-            params.sha = indexSha;
+        if (sha) {
+            params.sha = sha;
         }
-        console.log(indexSha);    
-        console.log(params);
-        // Make the API call
-        const response = await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', params);
-        console.log(response);
+
+        await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', params);
+
     } catch (error) {
         console.error('Error updating index.json:', error);
         throw error;
