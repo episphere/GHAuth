@@ -1,4 +1,5 @@
 const {SecretManagerServiceClient} = require('@google-cloud/secret-manager');
+const { Octokit } = require('octokit');
 
 const setHeaders = (res) => {
     res.header('Access-Control-Allow-Origin', '*');
@@ -169,6 +170,23 @@ const removeFromIndexFile = async (octokit, owner, repo, filePath) => {
     }
 }
 
+const getFile = async (token, owner, repo, path) => {
+    const octokit = new Octokit({
+        auth: token
+    });
+
+    const response = await octokit.request(`GET /repos/{owner}/{repo}/contents/{path}`, {
+        owner,
+        repo,
+        path,
+        headers: {
+            'X-GitHub-Api-Version': '2022-11-28'
+        }
+    });
+
+    return response;
+}
+
 const generateConceptID = () => {
     return Math.floor(100000000 + Math.random() * 900000000);
 }
@@ -178,5 +196,6 @@ module.exports = {
     fetchSecrets,
     updateIndexFile,
     generateConceptID,
-    removeFromIndexFile
+    removeFromIndexFile,
+    getFile
 }

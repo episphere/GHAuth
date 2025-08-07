@@ -295,6 +295,24 @@ const ghauth = async (req, res) => {
             res.status(500).json({error: 'Internal Server Error'});
         }
     }
+
+    if (api === 'getConfig') {
+        try {
+            if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
+
+            const token = req.headers.authorization.replace('Bearer','').trim();
+            const { owner, repo, path } = req.query;
+            
+            const response = await getFile(token, owner, repo, path);
+
+            console.log('Config file response:', response);
+
+            res.status(200);
+        } catch (error) {
+            console.error('Error:', error);
+            res.status(500).json({error: 'Internal Server Error'});
+        }
+    }
 }
 
 module.exports = {
