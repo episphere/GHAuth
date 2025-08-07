@@ -302,6 +302,7 @@ const ghauth = async (req, res) => {
 
             const token = req.headers.authorization.replace('Bearer','').trim();
             const { owner, repo, path } = req.query;
+            const { getFile } = require('./shared');
             
             const response = await getFile(token, owner, repo, path);
 
