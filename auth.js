@@ -214,6 +214,12 @@ const ghauth = async (req, res) => {
 
             res.status(200).json(response);
         } catch (error) {
+
+            if (error.status === 404) {
+                // If the path does not exist, return an empty array
+                return res.status(200).json([]);
+            }
+            
             console.error('Error:', error);
             res.status(500).json({error: 'Internal Server Error'});
         }
