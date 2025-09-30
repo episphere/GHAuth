@@ -127,7 +127,9 @@ const ghauth = async (req, res) => {
             });
 
             // Step 2: Update index.json
-            await updateIndexFile(octokit, owner, repo, path, content);
+            if (path !== 'config.json') {
+                await updateIndexFile(octokit, owner, repo, path, content, 'index');
+            }
 
             res.status(200).json(response);
         } catch (error) {
@@ -215,11 +217,6 @@ const ghauth = async (req, res) => {
             res.status(200).json(response);
         } catch (error) {
 
-            if (error.status === 404) {
-                // If the path does not exist, return an empty array
-                return res.status(200).json([]);
-            }
-            
             console.error('Error:', error);
             res.status(500).json({error: 'Internal Server Error'});
         }
@@ -259,16 +256,15 @@ const ghauth = async (req, res) => {
     }
 
     if (api === 'getConcept') {
+        const token = req.headers.authorization.replace('Bearer','').trim();
+        const { owner, repo, path } = req.query;
+
         try {
             if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
-
-            const token = req.headers.authorization.replace('Bearer','').trim();
 
             const octokit = new Octokit({
                 auth: token
             });
-
-            const { owner, repo, path } = req.query;
 
             const response = await octokit.request(`GET /repos/{owner}/{repo}/contents/{path}`, {
                 owner,
@@ -297,25 +293,42 @@ const ghauth = async (req, res) => {
 
             res.status(200).json({ conceptID });
         } catch (error) {
+            if (error.status === 404) {
+
+                const { createFile, getBaseConfig, toBase64 } = require('./shared');
+                const content = JSON.stringify({}, null, 2);
+                await createFile(token, owner, repo, path, toBase64(content), 'Create index file');
+
+                const conceptID = generateConceptID();
+                return res.status(200).json({ conceptID });
+            }
+            
             console.error('Error:', error);
             res.status(500).json({error: 'Internal Server Error'});
         }
     }
 
     if (api === 'getConfig') {
+        const token = req.headers.authorization.replace('Bearer','').trim();
+        const { owner, repo, path } = req.query;
+
         try {
             if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
 
-            const token = req.headers.authorization.replace('Bearer','').trim();
-            const { owner, repo, path } = req.query;
             const { getFile } = require('./shared');
-            
             const response = await getFile(token, owner, repo, path);
-
-            console.log('Config file response:', response);
 
             res.status(200).json(response);
         } catch (error) {
+
+            if (error.status === 404) {
+
+                const { createFile, getBaseConfig, toBase64 } = require('./shared');
+                const content = JSON.stringify(getBaseConfig(), null, 2);
+                const fileResponse = await createFile(token, owner, repo, path, toBase64(content), 'Create config file');
+                return res.status(200).json(fileResponse);
+            }
+            
             console.error('Error:', error);
             res.status(500).json({error: 'Internal Server Error'});
         }

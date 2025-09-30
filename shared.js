@@ -187,6 +187,61 @@ const getFile = async (token, owner, repo, path) => {
     return response;
 }
 
+const createFile = async (token, owner, repo, path, content, message) => {
+
+    console.log(`Creating file at ${path}`);
+    
+    const octokit = new Octokit({
+        auth: token
+    });
+    
+    const response = await octokit.request(`PUT /repos/{owner}/{repo}/contents/{path}`, {
+        owner,
+        repo,
+        path,
+        message,
+        content,
+        headers: {
+            'X-GitHub-Api-Version': '2022-11-28'
+        }
+    });
+
+    return response;
+}
+
+const getBaseConfig = () => {
+    return {
+        PRIMARY: [
+            { id: "conceptId", label: "Concept ID", required: true, type: "concept" },
+            { id: "key", label: "Key", required: true, type: "text" }
+        ],
+        SECONDARY: [
+            { id: "conceptId", label: "Concept ID", required: true, type: "concept" },
+            { id: "key", label: "Key", required: true, type: "text" },
+            { id: "primaryConceptId", label: "Primary Concept ID", required: true, type: "reference", referencesType: "PRIMARY" }
+        ],
+        SOURCE: [
+            { id: "conceptId", label: "Concept ID", required: true, type: "concept" },
+            { id: "key", label: "Key", required: true, type: "text" }
+        ],
+        QUESTION: [
+            { id: "conceptId", label: "Concept ID", required: true, type: "concept" },
+            { id: "key", label: "Key", required: true, type: "text" },
+            { id: "secondaryConceptId", label: "Secondary Concept ID", required: true, type: "reference", referencesType: "SECONDARY" },
+            { id: "sourceConceptId", label: "Source Concept ID", required: false, type: "reference", referencesType: "SOURCE" },
+            { id: "responses", label: "Responses", required: false, type: "reference", referencesType: "RESPONSE" }
+        ],
+        RESPONSE: [
+            { id: "conceptId", label: "Concept ID", required: true, type: "concept" },
+            { id: "key", label: "Key", required: true, type: "text" }
+        ]
+    }
+}
+
+const toBase64 = (string) => {
+    return btoa(string);
+}
+
 const generateConceptID = () => {
     return Math.floor(100000000 + Math.random() * 900000000);
 }
@@ -197,5 +252,8 @@ module.exports = {
     updateIndexFile,
     generateConceptID,
     removeFromIndexFile,
-    getFile
+    getFile,
+    createFile,
+    getBaseConfig,
+    toBase64
 }
