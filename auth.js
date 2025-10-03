@@ -1,6 +1,16 @@
 const { setHeaders, fetchSecrets, updateIndexFile, removeFromIndexFile, generateConceptID } = require('./shared');
 const { Octokit } = require('octokit');
 
+// Helper function to extract rate limit information from GitHub API responses
+const extractRateLimit = (response, defaultLimit = 5000) => {
+    return {
+        limit: parseInt(response.headers['x-ratelimit-limit']) || defaultLimit,
+        remaining: parseInt(response.headers['x-ratelimit-remaining']) || 0,
+        reset: new Date(parseInt(response.headers['x-ratelimit-reset']) * 1000),
+        resetIn: parseInt(response.headers['x-ratelimit-reset']) - Math.floor(Date.now() / 1000)
+    };
+};
+
 const ghauth = async (req, res) => {
     setHeaders(res);
     
@@ -8,6 +18,30 @@ const ghauth = async (req, res) => {
 
     const api = req.query.api;
     console.log(`API: ${api}`);
+
+    // Define valid API endpoints in one place
+    const validEndpoints = [
+        'accessToken',
+        'getUser',
+        'addFile', 
+        'updateFile',
+        'getRepo',
+        'searchFiles',
+        'getUserRepositories',
+        'getFiles',
+        'deleteFile',
+        'getConcept',
+        'getConfig'
+    ];
+
+    // Early validation for invalid API endpoints
+    if (!validEndpoints.includes(api)) {
+        return res.status(400).json({
+            error: 'Invalid API endpoint',
+            message: `API endpoint '${api}' is not supported`,
+            supportedEndpoints: validEndpoints
+        });
+    }
 
     if (api === 'accessToken') {
         try {
@@ -57,7 +91,11 @@ const ghauth = async (req, res) => {
             });
 
             const response = await octokit.request('GET /user');
-            res.status(200).json(response);
+            
+            res.status(200).json({
+                ...response,
+                rateLimit: extractRateLimit(response)
+            });
         } catch (error) {
             console.error('Error:', error);
             res.status(500).json({error: 'Internal Server Error'});
@@ -168,6 +206,79 @@ const ghauth = async (req, res) => {
         }
     }
 
+    if (api === 'searchFiles') {
+        try {
+            if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
+
+            const token = req.headers.authorization.replace('Bearer','').trim();
+            const { owner, repo, query } = req.query;
+
+            if (!query) {
+                return res.status(400).json({error: 'Query parameter is required'});
+            }
+
+            const octokit = new Octokit({
+                auth: token
+            });
+
+            // Use GitHub Search API to find JSON files containing the query term
+            const searchQuery = `${query} in:file extension:json repo:${owner}/${repo}`;
+            
+            const searchResponse = await octokit.request('GET /search/code', {
+                q: searchQuery,
+                per_page: 100, // Maximum allowed by GitHub
+                headers: {
+                    'X-GitHub-Api-Version': '2022-11-28'
+                }
+            });
+
+            // Filter out reference/index files and extract file paths and relevant information
+            const matchingFiles = searchResponse.data.items
+                .filter(item => {
+                    // Exclude index.json, object.json, and config.json files
+                    const fileName = item.name.toLowerCase();
+                    const queryFileName = `${query.toLowerCase()}.json`;
+                    
+                    return !['index.json', 'object.json', 'config.json'].includes(fileName) &&
+                           fileName !== queryFileName; // Exclude the file that matches the query itself
+                })
+                .map(item => ({
+                    path: item.path,
+                    name: item.name,
+                    sha: item.sha,
+                    url: item.html_url,
+                    score: item.score,
+                    repository: item.repository.full_name
+                }));
+
+            res.status(200).json({
+                query: query,
+                totalCount: searchResponse.data.total_count,
+                incomplete_results: searchResponse.data.incomplete_results,
+                files: matchingFiles,
+                rateLimit: extractRateLimit(searchResponse, 30) // Search API limit is 30/min
+            });
+
+        } catch (error) {
+            console.error('Error:', error);
+            
+            // Handle specific GitHub API errors
+            if (error.status === 403) {
+                res.status(403).json({
+                    error: 'Rate limit exceeded or insufficient permissions',
+                    message: 'GitHub Search API has strict rate limits. Try again later.'
+                });
+            } else if (error.status === 422) {
+                res.status(422).json({
+                    error: 'Invalid search query',
+                    message: 'The search query format is invalid or too complex.'
+                });
+            } else {
+                res.status(500).json({error: 'Internal Server Error'});
+            }
+        }
+    }
+
     if (api === 'getUserRepositories') {
         try {
             if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
@@ -185,7 +296,11 @@ const ghauth = async (req, res) => {
                   'X-GitHub-Api-Version': '2022-11-28'
                 }
             });
-            res.status(200).json(response);
+            
+            res.status(200).json({
+                ...response,
+                rateLimit: extractRateLimit(response)
+            });
         }
         catch (error) {
             console.error('Error:', error);
@@ -214,7 +329,10 @@ const ghauth = async (req, res) => {
                 }
             });
 
-            res.status(200).json(response);
+            res.status(200).json({
+                ...response,
+                rateLimit: extractRateLimit(response)
+            });
         } catch (error) {
 
             console.error('Error:', error);
@@ -245,8 +363,9 @@ const ghauth = async (req, res) => {
                 }
             });
 
-            // Step 2: Update index.json
-            await removeFromIndexFile(octokit, owner, repo, path);
+            // Step 2: Update index files
+            await removeFromIndexFile(octokit, owner, repo, path, 'index');
+            await removeFromIndexFile(octokit, owner, repo, path, 'object');
 
             res.status(200).json(response);
         } catch (error) {

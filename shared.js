@@ -114,7 +114,7 @@ const updateIndexFile = async (octokit, owner, repo, filePath, fileContent, file
     }
 }
 
-const removeFromIndexFile = async (octokit, owner, repo, filePath) => {
+const removeFromIndexFile = async (octokit, owner, repo, filePath, fileType) => {
     try {
         let directoryPath = '';
 
@@ -122,51 +122,64 @@ const removeFromIndexFile = async (octokit, owner, repo, filePath) => {
             directoryPath = filePath.substring(0, filePath.lastIndexOf('/'));
         }
 
-        const indexPath = directoryPath ? `${directoryPath}/index.json` : 'index.json';
-        let indexContent = {};
-        let indexSha = null;
+        const indexPath = directoryPath ? `${directoryPath}/${fileType}.json` : `${fileType}.json`;
+        let content = {};
+        let sha = null;
     
-        // Step 1: Fetch the existing index.json
-        const indexResponse = await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
-            owner,
-            repo,
-            path: indexPath,
-            headers: {
-                'X-GitHub-Api-Version': '2022-11-28',
-            },
-        });
-    
-        const indexData = Buffer.from(indexResponse.data.content, 'base64').toString('utf-8');
-        indexContent = JSON.parse(indexData);
-        indexSha = indexResponse.data.sha;
-    
-        // Ensure indexContent is an object
-        if (!indexContent || typeof indexContent !== 'object') {
-            indexContent = {};
+        // Step 1: Fetch the existing index file (if it exists)
+        try {
+            const response = await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
+                owner,
+                repo,
+                path: indexPath,
+                headers: {
+                    'X-GitHub-Api-Version': '2022-11-28',
+                },
+            });
+
+            const data = Buffer.from(response.data.content, 'base64').toString('utf-8');
+            content = JSON.parse(data);
+            sha = response.data.sha;
+        } catch (error) {
+            // If index file doesn't exist, nothing to remove
+            if (error.status !== 404) {
+                throw error;
+            }
+            return; // Exit early if file doesn't exist
         }
+
+        // Ensure content is an object
+        if (!content || typeof content !== 'object') {
+            content = {};
+        }
+
+        // Step 2: Remove the file entry from content
+        const fileName = filePath.substring(filePath.lastIndexOf('/') + 1);
+        delete content[fileName];
+
+        // Step 3: Commit the updated index file
+        const updatedContent = Buffer.from(JSON.stringify(content, null, 2)).toString('base64');
+
+        const commitMessage = `Update ${fileType}.json after deleting ${filePath}`;
     
-        // Step 2: Remove the file entry from indexContent
-        delete indexContent[filePath];
-    
-        // Step 3: Commit the updated index.json
-        const updatedIndexContent = Buffer.from(JSON.stringify(indexContent, null, 2)).toString('base64');
-    
-        const commitMessage = `Update index.json after deleting ${filePath}`;
-    
-        await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
+        // Prepare the request parameters
+        const params = {
             owner,
             repo,
             path: indexPath,
             message: commitMessage,
-            content: updatedIndexContent,
-            sha: indexSha,
+            sha,
+            content: updatedContent,
             headers: {
                 'X-GitHub-Api-Version': '2022-11-28',
             },
-        });
+        };
+
+        await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', params);
+
     } catch (error) {
-      console.error('Error updating index.json:', error);
-      throw error;
+        console.error(`Error updating ${fileType}.json:`, error);
+        throw error;
     }
 }
 
