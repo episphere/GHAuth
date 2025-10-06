@@ -1,4 +1,4 @@
-const { setHeaders, fetchSecrets, updateIndexFile, removeFromIndexFile, generateConceptID } = require('./shared');
+const { setHeaders, fetchSecrets, generateConceptID, manageIndexFile } = require('./shared');
 const { Octokit } = require('octokit');
 
 // Helper function to extract rate limit information from GitHub API responses
@@ -129,8 +129,7 @@ const ghauth = async (req, res) => {
             // If file is '.gitkeep' then don't update index.json
             if (!path.endsWith('.gitkeep')) {
                 // Step 2: Update index.json
-                await updateIndexFile(octokit, owner, repo, path, content, 'index');
-                await updateIndexFile(octokit, owner, repo, path, content, 'object');
+                await manageIndexFile(octokit, owner, repo, path, 'index', 'update', content);
             }
 
             res.status(200).json(response);
@@ -166,7 +165,7 @@ const ghauth = async (req, res) => {
 
             // Step 2: Update index.json
             if (path !== 'config.json') {
-                await updateIndexFile(octokit, owner, repo, path, content, 'index');
+                await manageIndexFile(octokit, owner, repo, path, 'index', 'update', content);
             }
 
             res.status(200).json(response);
@@ -235,11 +234,11 @@ const ghauth = async (req, res) => {
             // Filter out reference/index files and extract file paths and relevant information
             const matchingFiles = searchResponse.data.items
                 .filter(item => {
-                    // Exclude index.json, object.json, and config.json files
+                    // Exclude index.json and config.json files
                     const fileName = item.name.toLowerCase();
                     const queryFileName = `${query.toLowerCase()}.json`;
-                    
-                    return !['index.json', 'object.json', 'config.json'].includes(fileName) &&
+
+                    return !['index.json', 'config.json'].includes(fileName) &&
                            fileName !== queryFileName; // Exclude the file that matches the query itself
                 })
                 .map(item => ({
@@ -364,8 +363,7 @@ const ghauth = async (req, res) => {
             });
 
             // Step 2: Update index files
-            await removeFromIndexFile(octokit, owner, repo, path, 'index');
-            await removeFromIndexFile(octokit, owner, repo, path, 'object');
+            await manageIndexFile(octokit, owner, repo, path, 'index', 'remove');
 
             res.status(200).json(response);
         } catch (error) {
