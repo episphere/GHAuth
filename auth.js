@@ -220,6 +220,8 @@ const ghauth = async (req, res) => {
                 auth: token
             });
 
+            console.log(`Searching for files in ${owner}/${repo} with query: ${query}`);
+
             // Use GitHub Search API to find JSON files containing the query term
             const searchQuery = `${query} in:file extension:json repo:${owner}/${repo}`;
             
