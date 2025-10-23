@@ -1,4 +1,4 @@
-const { setHeaders, fetchSecrets, generateConceptID, manageIndexFile } = require('./shared');
+const { setHeaders, fetchSecrets, generateConceptID, manageIndexFile, rebuildIndex } = require('./shared');
 const { Octokit } = require('octokit');
 
 // Helper function to extract rate limit information from GitHub API responses
@@ -31,7 +31,8 @@ const ghauth = async (req, res) => {
         'getFiles',
         'deleteFile',
         'getConcept',
-        'getConfig'
+        'getConfig',
+        'rebuildIndex'
     ];
 
     // Early validation for invalid API endpoints
@@ -464,6 +465,45 @@ const ghauth = async (req, res) => {
             
             console.error('Error:', error);
             res.status(500).json({error: 'Internal Server Error'});
+        }
+    }
+
+    if (api === 'rebuildIndex') {
+        try {
+            if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
+
+            const token = req.headers.authorization.replace('Bearer','').trim();
+            const { owner, repo, branch } = req.body;
+
+            const octokit = new Octokit({
+                auth: token
+            });
+
+            console.log(`Rebuilding index for ${owner}/${repo}${branch ? ` on branch ${branch}` : ''}`);
+
+            const result = await rebuildIndex(octokit, owner, repo, branch || 'main');
+
+            res.status(200).json(result);
+
+        } catch (error) {
+            console.error('Error rebuilding index:', error);
+            
+            if (error.status === 404) {
+                res.status(404).json({
+                    error: 'Repository or branch not found',
+                    message: 'Could not find the specified repository or branch'
+                });
+            } else if (error.status === 403) {
+                res.status(403).json({
+                    error: 'Permission denied',
+                    message: 'You do not have permission to access this repository'
+                });
+            } else {
+                res.status(500).json({
+                    error: 'Internal Server Error',
+                    message: error.message
+                });
+            }
         }
     }
 }
