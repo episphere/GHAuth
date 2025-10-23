@@ -225,6 +225,8 @@ const ghauth = async (req, res) => {
             // Use GitHub Search API to find JSON files containing the query term
             const searchQuery = `${query} in:file extension:json repo:${owner}/${repo}`;
             
+            console.log(`GitHub search query: ${searchQuery}`);
+            
             const searchResponse = await octokit.request('GET /search/code', {
                 q: searchQuery,
                 per_page: 100, // Maximum allowed by GitHub
@@ -233,6 +235,10 @@ const ghauth = async (req, res) => {
                 }
             });
 
+            console.log(`GitHub API returned ${searchResponse.data.total_count} total results`);
+            console.log(`Incomplete results: ${searchResponse.data.incomplete_results}`);
+            console.log(`Items in response: ${searchResponse.data.items.length}`);
+
             // Filter out reference/index files and extract file paths and relevant information
             const matchingFiles = searchResponse.data.items
                 .filter(item => {
@@ -240,8 +246,14 @@ const ghauth = async (req, res) => {
                     const fileName = item.name.toLowerCase();
                     const queryFileName = `${query.toLowerCase()}.json`;
 
-                    return !['index.json', 'config.json'].includes(fileName) &&
+                    const shouldInclude = !['index.json', 'config.json'].includes(fileName) &&
                            fileName !== queryFileName; // Exclude the file that matches the query itself
+                    
+                    if (!shouldInclude) {
+                        console.log(`Filtering out file: ${fileName}`);
+                    }
+                    
+                    return shouldInclude;
                 })
                 .map(item => ({
                     path: item.path,
@@ -251,6 +263,8 @@ const ghauth = async (req, res) => {
                     score: item.score,
                     repository: item.repository.full_name
                 }));
+
+            console.log(`After filtering: ${matchingFiles.length} files`);
 
             res.status(200).json({
                 query: query,
