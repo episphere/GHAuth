@@ -350,9 +350,32 @@ const ghauth = async (req, res) => {
                 rateLimit: extractRateLimit(response)
             });
         } catch (error) {
+            console.error('Error in getFiles:', error);
 
-            console.error('Error:', error);
-            res.status(500).json({error: 'Internal Server Error'});
+            // Handle 404 - path doesn't exist (empty repo or missing directory)
+            if (error.status === 404) {
+                console.log(`Path not found: ${req.query.path} - returning empty array`);
+                return res.status(200).json({
+                    data: [],
+                    status: 200,
+                    headers: {},
+                    message: 'Path not found - empty repository or directory does not exist'
+                });
+            }
+
+            // Handle 403 - permission denied
+            if (error.status === 403) {
+                return res.status(403).json({
+                    error: 'Permission denied',
+                    message: 'You do not have access to this repository or path'
+                });
+            }
+
+            // Handle other errors
+            res.status(500).json({
+                error: 'Internal Server Error',
+                message: error.message
+            });
         }
     }
 
