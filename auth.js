@@ -1,15 +1,19 @@
-const { setHeaders, fetchSecrets, generateConceptID, manageIndexFile, rebuildIndex } = require('./shared');
 const { Octokit } = require('octokit');
-
-// Helper function to extract rate limit information from GitHub API responses
-const extractRateLimit = (response, defaultLimit = 5000) => {
-    return {
-        limit: parseInt(response.headers['x-ratelimit-limit']) || defaultLimit,
-        remaining: parseInt(response.headers['x-ratelimit-remaining']) || 0,
-        reset: new Date(parseInt(response.headers['x-ratelimit-reset']) * 1000),
-        resetIn: parseInt(response.headers['x-ratelimit-reset']) - Math.floor(Date.now() / 1000)
-    };
-};
+const {
+    setHeaders,
+    extractToken,
+    missingParams,
+    sendMissingParams,
+    sendUnauthorized,
+    sendError
+} = require('./lib/http');
+const { extractRateLimit } = require('./lib/rateLimit');
+const { logRequest } = require('./lib/logging');
+const { fetchSecrets } = require('./lib/secrets');
+const { getFile, createFile, toBase64 } = require('./lib/github');
+const { manageIndexFile } = require('./domain/indexFile');
+const { getBaseConfig } = require('./domain/config');
+const { generateConceptID } = require('./domain/conceptId');
 
 const ghauth = async (req, res) => {
     setHeaders(res);
@@ -17,7 +21,7 @@ const ghauth = async (req, res) => {
     if(req.method === 'OPTIONS') return res.status(200).json({code: 200});
 
     const api = req.query.api;
-    console.log(`API: ${api}`);
+    const startedAt = Date.now();
 
     // Define valid API endpoints in one place
     const validEndpoints = [
@@ -31,12 +35,12 @@ const ghauth = async (req, res) => {
         'getFiles',
         'deleteFile',
         'getConcept',
-        'getConfig',
-        'rebuildIndex'
+        'getConfig'
     ];
 
     // Early validation for invalid API endpoints
     if (!validEndpoints.includes(api)) {
+        logRequest({ api, status: 400, startedAt, error: 'Invalid API endpoint' });
         return res.status(400).json({
             error: 'Invalid API endpoint',
             message: `API endpoint '${api}' is not supported`,
@@ -48,10 +52,11 @@ const ghauth = async (req, res) => {
         try {
             if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
 
+            const missing = missingParams(req.body, ['code', 'redirect']);
+            if (missing.length) return sendMissingParams(res, api, startedAt, missing);
+
             const environment = req.query.environment;
             const local = environment === 'dev' ? true : false;
-
-            console.log(`Local Development: ${environment}`);
 
             const secrets = await fetchSecrets(local);
 
@@ -73,11 +78,11 @@ const ghauth = async (req, res) => {
             });
     
             const response = await tokenResponse.json();
+            logRequest({ api, status: 200, startedAt });
             res.status(200).json(response);
 
         } catch (error) {
-            console.error('Error:', error);
-            res.status(500).json({error: 'Internal Server Error'});
+            return sendError(res, api, startedAt, error);
         }
     }
 
@@ -85,21 +90,24 @@ const ghauth = async (req, res) => {
         try {
             if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
 
-            const token = req.headers.authorization.replace('Bearer','').trim();
+            const token = extractToken(req);
+            if (!token) return sendUnauthorized(res, api, startedAt);
 
             const octokit = new Octokit({
                 auth: token
             });
 
             const response = await octokit.request('GET /user');
-            
+            const rateLimit = extractRateLimit(response);
+
+            logRequest({ api, status: 200, startedAt, rateLimit });
             res.status(200).json({
-                ...response,
-                rateLimit: extractRateLimit(response)
+                data: response.data,
+                status: response.status,
+                rateLimit
             });
         } catch (error) {
-            console.error('Error:', error);
-            res.status(500).json({error: 'Internal Server Error'});
+            return sendError(res, api, startedAt, error);
         }
     }
 
@@ -107,7 +115,11 @@ const ghauth = async (req, res) => {
         try {
             if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
 
-            const token = req.headers.authorization.replace('Bearer','').trim();
+            const token = extractToken(req);
+            if (!token) return sendUnauthorized(res, api, startedAt);
+
+            const missing = missingParams(req.body, ['owner', 'repo', 'path', 'message', 'content']);
+            if (missing.length) return sendMissingParams(res, api, startedAt, missing);
 
             const octokit = new Octokit({
                 auth: token
@@ -127,16 +139,18 @@ const ghauth = async (req, res) => {
                 }
             });
 
-            // If file is '.gitkeep' then don't update index.json
-            if (!path.endsWith('.gitkeep')) {
-                // Step 2: Update index.json
-                await manageIndexFile(octokit, owner, repo, path, 'index', 'update', content);
-            }
+            // Step 2: Update index.json
+            await manageIndexFile(octokit, owner, repo, path, 'index', 'update', content);
 
-            res.status(200).json(response);
+            const rateLimit = extractRateLimit(response);
+            logRequest({ api, status: 200, startedAt, rateLimit });
+            res.status(200).json({
+                data: response.data,
+                status: response.status,
+                rateLimit
+            });
         } catch (error) {
-            console.error('Error:', error);
-            res.status(500).json({error: 'Internal Server Error'});
+            return sendError(res, api, startedAt, error);
         }
     }
 
@@ -144,7 +158,11 @@ const ghauth = async (req, res) => {
         try {
             if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
 
-            const token = req.headers.authorization.replace('Bearer','').trim();
+            const token = extractToken(req);
+            if (!token) return sendUnauthorized(res, api, startedAt);
+
+            const missing = missingParams(req.body, ['owner', 'repo', 'path', 'message', 'content', 'sha']);
+            if (missing.length) return sendMissingParams(res, api, startedAt, missing);
 
             const octokit = new Octokit({
                 auth: token
@@ -169,10 +187,15 @@ const ghauth = async (req, res) => {
                 await manageIndexFile(octokit, owner, repo, path, 'index', 'update', content);
             }
 
-            res.status(200).json(response);
+            const rateLimit = extractRateLimit(response);
+            logRequest({ api, status: 200, startedAt, rateLimit });
+            res.status(200).json({
+                data: response.data,
+                status: response.status,
+                rateLimit
+            });
         } catch (error) {
-            console.error('Error:', error);
-            res.status(500).json({error: 'Internal Server Error'});
+            return sendError(res, api, startedAt, error);
         }
     }
 
@@ -180,7 +203,11 @@ const ghauth = async (req, res) => {
         try {
             if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
 
-            const token = req.headers.authorization.replace('Bearer','').trim();
+            const token = extractToken(req);
+            if (!token) return sendUnauthorized(res, api, startedAt);
+
+            const missing = missingParams(req.query, ['owner', 'repo']);
+            if (missing.length) return sendMissingParams(res, api, startedAt, missing);
 
             const octokit = new Octokit({
                 auth: token
@@ -198,11 +225,11 @@ const ghauth = async (req, res) => {
 
             const zipData = Buffer.from(response.data);
 
+            logRequest({ api, status: 200, startedAt, rateLimit: extractRateLimit(response) });
             res.set('Content-Type', 'application/zip');
             res.status(200).send(zipData);
         } catch (error) {
-            console.error('Error:', error);
-            res.status(500).json({error: 'Internal Server Error'});
+            return sendError(res, api, startedAt, error);
         }
     }
 
@@ -210,23 +237,20 @@ const ghauth = async (req, res) => {
         try {
             if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
 
-            const token = req.headers.authorization.replace('Bearer','').trim();
-            const { owner, repo, query } = req.query;
+            const token = extractToken(req);
+            if (!token) return sendUnauthorized(res, api, startedAt);
 
-            if (!query) {
-                return res.status(400).json({error: 'Query parameter is required'});
-            }
+            const missing = missingParams(req.query, ['owner', 'repo', 'query']);
+            if (missing.length) return sendMissingParams(res, api, startedAt, missing);
+
+            const { owner, repo, query } = req.query;
 
             const octokit = new Octokit({
                 auth: token
             });
 
-            console.log(`Searching for files in ${owner}/${repo} with query: ${query}`);
-
             // Use GitHub Search API to find JSON files containing the query term
             const searchQuery = `${query} in:file extension:json repo:${owner}/${repo}`;
-            
-            console.log(`GitHub search query: ${searchQuery}`);
             
             const searchResponse = await octokit.request('GET /search/code', {
                 q: searchQuery,
@@ -236,10 +260,6 @@ const ghauth = async (req, res) => {
                 }
             });
 
-            console.log(`GitHub API returned ${searchResponse.data.total_count} total results`);
-            console.log(`Incomplete results: ${searchResponse.data.incomplete_results}`);
-            console.log(`Items in response: ${searchResponse.data.items.length}`);
-
             // Filter out reference/index files and extract file paths and relevant information
             const matchingFiles = searchResponse.data.items
                 .filter(item => {
@@ -247,14 +267,8 @@ const ghauth = async (req, res) => {
                     const fileName = item.name.toLowerCase();
                     const queryFileName = `${query.toLowerCase()}.json`;
 
-                    const shouldInclude = !['index.json', 'config.json'].includes(fileName) &&
+                    return !['index.json', 'config.json'].includes(fileName) &&
                            fileName !== queryFileName; // Exclude the file that matches the query itself
-                    
-                    if (!shouldInclude) {
-                        console.log(`Filtering out file: ${fileName}`);
-                    }
-                    
-                    return shouldInclude;
                 })
                 .map(item => ({
                     path: item.path,
@@ -265,33 +279,19 @@ const ghauth = async (req, res) => {
                     repository: item.repository.full_name
                 }));
 
-            console.log(`After filtering: ${matchingFiles.length} files`);
+            const rateLimit = extractRateLimit(searchResponse, 30); // Search API limit is 30/min
 
+            logRequest({ api, status: 200, startedAt, rateLimit });
             res.status(200).json({
                 query: query,
                 totalCount: searchResponse.data.total_count,
                 incomplete_results: searchResponse.data.incomplete_results,
                 files: matchingFiles,
-                rateLimit: extractRateLimit(searchResponse, 30) // Search API limit is 30/min
+                rateLimit
             });
 
         } catch (error) {
-            console.error('Error:', error);
-            
-            // Handle specific GitHub API errors
-            if (error.status === 403) {
-                res.status(403).json({
-                    error: 'Rate limit exceeded or insufficient permissions',
-                    message: 'GitHub Search API has strict rate limits. Try again later.'
-                });
-            } else if (error.status === 422) {
-                res.status(422).json({
-                    error: 'Invalid search query',
-                    message: 'The search query format is invalid or too complex.'
-                });
-            } else {
-                res.status(500).json({error: 'Internal Server Error'});
-            }
+            return sendError(res, api, startedAt, error);
         }
     }
 
@@ -299,7 +299,8 @@ const ghauth = async (req, res) => {
         try {
             if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
 
-            const token = req.headers.authorization.replace('Bearer','').trim();
+            const token = extractToken(req);
+            if (!token) return sendUnauthorized(res, api, startedAt);
 
             const octokit = new Octokit({
                 auth: token
@@ -313,14 +314,16 @@ const ghauth = async (req, res) => {
                 }
             });
             
+            const rateLimit = extractRateLimit(response);
+            logRequest({ api, status: 200, startedAt, rateLimit });
             res.status(200).json({
-                ...response,
-                rateLimit: extractRateLimit(response)
+                data: response.data,
+                status: response.status,
+                rateLimit
             });
         }
         catch (error) {
-            console.error('Error:', error);
-            res.status(500).json({error: 'Internal Server Error'});
+            return sendError(res, api, startedAt, error);
         }
     }
 
@@ -328,7 +331,11 @@ const ghauth = async (req, res) => {
         try {
             if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
 
-            const token = req.headers.authorization.replace('Bearer','').trim();
+            const token = extractToken(req);
+            if (!token) return sendUnauthorized(res, api, startedAt);
+
+            const missing = missingParams(req.query, ['owner', 'repo', 'path']);
+            if (missing.length) return sendMissingParams(res, api, startedAt, missing);
 
             const octokit = new Octokit({
                 auth: token
@@ -345,37 +352,25 @@ const ghauth = async (req, res) => {
                 }
             });
 
+            const rateLimit = extractRateLimit(response);
+            logRequest({ api, status: 200, startedAt, rateLimit });
             res.status(200).json({
-                ...response,
-                rateLimit: extractRateLimit(response)
+                data: response.data,
+                status: response.status,
+                rateLimit
             });
         } catch (error) {
-            console.error('Error in getFiles:', error);
-
-            // Handle 404 - path doesn't exist (empty repo or missing directory)
+            // A genuinely absent path is an empty repository; every other failure must surface
             if (error.status === 404) {
-                console.log(`Path not found: ${req.query.path} - returning empty array`);
+                logRequest({ api, status: 200, startedAt, error: 'Path not found - treated as empty' });
                 return res.status(200).json({
                     data: [],
                     status: 200,
-                    headers: {},
-                    message: 'Path not found - empty repository or directory does not exist'
+                    message: 'Path not found - empty repository or file does not exist'
                 });
             }
 
-            // Handle 403 - permission denied
-            if (error.status === 403) {
-                return res.status(403).json({
-                    error: 'Permission denied',
-                    message: 'You do not have access to this repository or path'
-                });
-            }
-
-            // Handle other errors
-            res.status(500).json({
-                error: 'Internal Server Error',
-                message: error.message
-            });
+            return sendError(res, api, startedAt, error);
         }
     }
 
@@ -383,7 +378,11 @@ const ghauth = async (req, res) => {
         try {
             if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
 
-            const token = req.headers.authorization.replace('Bearer','').trim();
+            const token = extractToken(req);
+            if (!token) return sendUnauthorized(res, api, startedAt);
+
+            const missing = missingParams(req.body, ['owner', 'repo', 'path', 'message', 'sha']);
+            if (missing.length) return sendMissingParams(res, api, startedAt, missing);
 
             const octokit = new Octokit({
                 auth: token
@@ -405,20 +404,30 @@ const ghauth = async (req, res) => {
             // Step 2: Update index files
             await manageIndexFile(octokit, owner, repo, path, 'index', 'remove');
 
-            res.status(200).json(response);
+            const rateLimit = extractRateLimit(response);
+            logRequest({ api, status: 200, startedAt, rateLimit });
+            res.status(200).json({
+                data: response.data,
+                status: response.status,
+                rateLimit
+            });
         } catch (error) {
-            console.error('Error:', error);
-            res.status(500).json({error: 'Internal Server Error'});
+            return sendError(res, api, startedAt, error);
         }
     }
 
     if (api === 'getConcept') {
-        const token = req.headers.authorization.replace('Bearer','').trim();
+        if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
+
+        const token = extractToken(req);
+        if (!token) return sendUnauthorized(res, api, startedAt);
+
+        const conceptMissing = missingParams(req.query, ['owner', 'repo', 'path']);
+        if (conceptMissing.length) return sendMissingParams(res, api, startedAt, conceptMissing);
+
         const { owner, repo, path } = req.query;
 
         try {
-            if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
-
             const octokit = new Octokit({
                 auth: token
             });
@@ -448,85 +457,50 @@ const ghauth = async (req, res) => {
                 }
             }
 
+            logRequest({ api, status: 200, startedAt, rateLimit: extractRateLimit(response) });
             res.status(200).json({ conceptID });
         } catch (error) {
             if (error.status === 404) {
 
-                const { createFile, getBaseConfig, toBase64 } = require('./shared');
                 const content = JSON.stringify({}, null, 2);
                 await createFile(token, owner, repo, path, toBase64(content), 'Create index file');
 
                 const conceptID = generateConceptID();
+                logRequest({ api, status: 200, startedAt, error: 'Index missing - created' });
                 return res.status(200).json({ conceptID });
             }
             
-            console.error('Error:', error);
-            res.status(500).json({error: 'Internal Server Error'});
+            return sendError(res, api, startedAt, error);
         }
     }
 
     if (api === 'getConfig') {
-        const token = req.headers.authorization.replace('Bearer','').trim();
+        if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
+
+        const token = extractToken(req);
+        if (!token) return sendUnauthorized(res, api, startedAt);
+
+        const configMissing = missingParams(req.query, ['owner', 'repo', 'path']);
+        if (configMissing.length) return sendMissingParams(res, api, startedAt, configMissing);
+
         const { owner, repo, path } = req.query;
 
         try {
-            if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
-
-            const { getFile } = require('./shared');
             const response = await getFile(token, owner, repo, path);
 
-            res.status(200).json(response);
+            logRequest({ api, status: 200, startedAt, rateLimit: extractRateLimit(response) });
+            res.status(200).json({ data: response.data, status: response.status });
         } catch (error) {
 
             if (error.status === 404) {
 
-                const { createFile, getBaseConfig, toBase64 } = require('./shared');
                 const content = JSON.stringify(getBaseConfig(), null, 2);
                 const fileResponse = await createFile(token, owner, repo, path, toBase64(content), 'Create config file');
-                return res.status(200).json(fileResponse);
+                logRequest({ api, status: 200, startedAt, error: 'Config missing - created' });
+                return res.status(200).json({ data: fileResponse.data, status: fileResponse.status });
             }
             
-            console.error('Error:', error);
-            res.status(500).json({error: 'Internal Server Error'});
-        }
-    }
-
-    if (api === 'rebuildIndex') {
-        try {
-            if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
-
-            const token = req.headers.authorization.replace('Bearer','').trim();
-            const { owner, repo, branch } = req.body;
-
-            const octokit = new Octokit({
-                auth: token
-            });
-
-            console.log(`Rebuilding index for ${owner}/${repo}${branch ? ` on branch ${branch}` : ''}`);
-
-            const result = await rebuildIndex(octokit, owner, repo, branch || 'main');
-
-            res.status(200).json(result);
-
-        } catch (error) {
-            console.error('Error rebuilding index:', error);
-            
-            if (error.status === 404) {
-                res.status(404).json({
-                    error: 'Repository or branch not found',
-                    message: 'Could not find the specified repository or branch'
-                });
-            } else if (error.status === 403) {
-                res.status(403).json({
-                    error: 'Permission denied',
-                    message: 'You do not have permission to access this repository'
-                });
-            } else {
-                res.status(500).json({
-                    error: 'Internal Server Error',
-                    message: error.message
-                });
-            }
+            return sendError(res, api, startedAt, error);
         }
     }
 }
