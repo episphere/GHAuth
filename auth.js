@@ -10,7 +10,7 @@ const {
 const { extractRateLimit } = require('./lib/rateLimit');
 const { logRequest } = require('./lib/logging');
 const { fetchSecrets } = require('./lib/secrets');
-const { getFile, createFile, toBase64 } = require('./lib/github');
+const { API_VERSION, createClient, getFile, createFile, toBase64 } = require('./lib/github');
 const { manageIndexFile } = require('./domain/indexFile');
 const { getBaseConfig } = require('./domain/config');
 const { generateConceptID } = require('./domain/conceptId');
@@ -35,7 +35,9 @@ const ghauth = async (req, res) => {
         'getFiles',
         'deleteFile',
         'getConcept',
-        'getConfig'
+        'getConfig',
+        'getTree',
+        'getFileContent'
     ];
 
     // Early validation for invalid API endpoints
@@ -500,6 +502,90 @@ const ghauth = async (req, res) => {
                 return res.status(200).json({ data: fileResponse.data, status: fileResponse.status });
             }
             
+            return sendError(res, api, startedAt, error);
+        }
+    }
+
+    if (api === 'getTree') {
+        try {
+            if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
+
+            const token = extractToken(req);
+            if (!token) return sendUnauthorized(res, api, startedAt);
+
+            const missing = missingParams(req.query, ['owner', 'repo', 'ref']);
+            if (missing.length) return sendMissingParams(res, api, startedAt, missing);
+
+            const { owner, repo, ref } = req.query;
+
+            // The contents API caps a directory listing at 1,000 entries; the trees API
+            // returns up to 100,000 and reports truncation explicitly.
+            const response = await createClient(token).request('GET /repos/{owner}/{repo}/git/trees/{tree_sha}', {
+                owner,
+                repo,
+                tree_sha: ref,
+                recursive: '1',
+                headers: {
+                    'X-GitHub-Api-Version': API_VERSION
+                }
+            });
+
+            // Trimmed to three fields: full entries for 8,000 concepts are ~1MB of Cloud Run egress.
+            const data = (response.data.tree || [])
+                .filter(entry => entry.type === 'blob' && !entry.path.includes('/') && entry.path.endsWith('.json'))
+                .map(entry => ({ path: entry.path, sha: entry.sha, size: entry.size }));
+
+            const rateLimit = extractRateLimit(response);
+            logRequest({ api, status: 200, startedAt, rateLimit });
+            res.status(200).json({
+                data,
+                truncated: response.data.truncated === true,
+                status: response.status,
+                rateLimit
+            });
+        } catch (error) {
+            // 409 is GitHub's "Git Repository is empty" — a new repo, not a failure
+            if (error.status === 409) {
+                logRequest({ api, status: 200, startedAt, error: 'Empty repository' });
+                return res.status(200).json({ data: [], truncated: false, status: 200 });
+            }
+
+            return sendError(res, api, startedAt, error);
+        }
+    }
+
+    if (api === 'getFileContent') {
+        try {
+            if (req.method !== 'GET') return res.status(405).json({error: 'Method Not Allowed'});
+
+            const token = extractToken(req);
+            if (!token) return sendUnauthorized(res, api, startedAt);
+
+            const missing = missingParams(req.query, ['owner', 'repo', 'path']);
+            if (missing.length) return sendMissingParams(res, api, startedAt, missing);
+
+            const { owner, repo, path } = req.query;
+
+            // The raw media type reads up to 100MB. The default JSON representation
+            // returns content:"" above 1MB with a 200, which is indistinguishable from an empty file.
+            const response = await createClient(token).request('GET /repos/{owner}/{repo}/contents/{path}', {
+                owner,
+                repo,
+                path,
+                headers: {
+                    'X-GitHub-Api-Version': API_VERSION,
+                    accept: 'application/vnd.github.raw'
+                }
+            });
+
+            const rateLimit = extractRateLimit(response);
+            logRequest({ api, status: 200, startedAt, rateLimit });
+            res.status(200).json({
+                content: typeof response.data === 'string' ? response.data : JSON.stringify(response.data),
+                status: response.status,
+                rateLimit
+            });
+        } catch (error) {
             return sendError(res, api, startedAt, error);
         }
     }

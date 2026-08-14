@@ -50,7 +50,9 @@ const ENDPOINTS = [
     { api: 'getFiles',            method: 'GET',  auth: true,  requires: ['owner', 'repo', 'path'],                   in: 'query' },
     { api: 'deleteFile',          method: 'POST', auth: true,  requires: ['owner', 'repo', 'path', 'message', 'sha'], in: 'body' },
     { api: 'getConcept',          method: 'GET',  auth: true,  requires: ['owner', 'repo', 'path'],                   in: 'query' },
-    { api: 'getConfig',           method: 'GET',  auth: true,  requires: ['owner', 'repo', 'path'],                   in: 'query' }
+    { api: 'getConfig',           method: 'GET',  auth: true,  requires: ['owner', 'repo', 'path'],                   in: 'query' },
+    { api: 'getTree',             method: 'GET',  auth: true,  requires: ['owner', 'repo', 'ref'],                    in: 'query' },
+    { api: 'getFileContent',      method: 'GET',  auth: true,  requires: ['owner', 'repo', 'path'],                   in: 'query' }
 ];
 
 test('OPTIONS preflight returns 200 with CORS headers', async () => {
@@ -208,6 +210,16 @@ test.describe('sendError status mapping', () => {
 
         assert.strictEqual(res.statusCode, 403);
         assert.match(res.body.error, /Permission/);
+    });
+
+    // An expired token used to fall through to 500, so the client could not tell the
+    // user to log in again and validateToken reported the dead token as still valid.
+    test('a 401 from GitHub surfaces as 401, not a generic server error', async () => {
+        const res = await map({ status: 401, message: 'Bad credentials' });
+
+        assert.strictEqual(res.statusCode, 401);
+        assert.strictEqual(res.body.error, 'Unauthorized');
+        assert.match(res.body.message, /log in again/i);
     });
 
     test('409 explains the conflict is a concurrent edit', async () => {
