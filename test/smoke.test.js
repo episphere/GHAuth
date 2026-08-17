@@ -52,7 +52,8 @@ const ENDPOINTS = [
     { api: 'getConcept',          method: 'GET',  auth: true,  requires: ['owner', 'repo', 'path'],                   in: 'query' },
     { api: 'getConfig',           method: 'GET',  auth: true,  requires: ['owner', 'repo', 'path'],                   in: 'query' },
     { api: 'getTree',             method: 'GET',  auth: true,  requires: ['owner', 'repo', 'ref'],                    in: 'query' },
-    { api: 'getFileContent',      method: 'GET',  auth: true,  requires: ['owner', 'repo', 'path'],                   in: 'query' }
+    { api: 'getFileContent',      method: 'GET',  auth: true,  requires: ['owner', 'repo', 'path'],                   in: 'query' },
+    { api: 'commitFiles',         method: 'POST', auth: true,  requires: ['owner', 'repo', 'branch', 'message'],      in: 'body' }
 ];
 
 test('OPTIONS preflight returns 200 with CORS headers', async () => {

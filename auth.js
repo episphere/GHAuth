@@ -12,6 +12,7 @@ const { logRequest } = require('./lib/logging');
 const { fetchSecrets } = require('./lib/secrets');
 const { API_VERSION, createClient, getFile, createFile, toBase64 } = require('./lib/github');
 const { manageIndexFile } = require('./domain/indexFile');
+const { commitFiles } = require('./domain/gitData');
 const { getBaseConfig } = require('./domain/config');
 const { generateConceptID } = require('./domain/conceptId');
 
@@ -37,7 +38,8 @@ const ghauth = async (req, res) => {
         'getConcept',
         'getConfig',
         'getTree',
-        'getFileContent'
+        'getFileContent',
+        'commitFiles'
     ];
 
     // Early validation for invalid API endpoints
@@ -151,6 +153,37 @@ const ghauth = async (req, res) => {
                 status: response.status,
                 rateLimit
             });
+        } catch (error) {
+            return sendError(res, api, startedAt, error);
+        }
+    }
+
+    if (api === 'commitFiles') {
+        try {
+            if (req.method !== 'POST') return res.status(405).json({error: 'Method Not Allowed'});
+
+            const token = extractToken(req);
+            if (!token) return sendUnauthorized(res, api, startedAt);
+
+            const missing = missingParams(req.body, ['owner', 'repo', 'branch', 'message']);
+            if (missing.length) return sendMissingParams(res, api, startedAt, missing);
+
+            const octokit = createClient(token);
+
+            const { owner, repo, branch, message, files, deletions } = req.body;
+
+            const result = await commitFiles({
+                octokit,
+                owner,
+                repo,
+                branch,
+                message,
+                files: files || [],
+                deletions: deletions || []
+            });
+
+            logRequest({ api, status: 200, startedAt, files: result.committed, deleted: result.deleted });
+            res.status(200).json({ ...result, status: 200 });
         } catch (error) {
             return sendError(res, api, startedAt, error);
         }

@@ -13,150 +13,164 @@ const emptyIndex = () => ({
     }
 });
 
+/**
+ * Brings any stored index shape up to v2.0, migrating the legacy {filename: key} form.
+ *
+ * @param {Object|null} content - Parsed index.json, or null for a repository without one
+ * @returns {Object} A v2.0 index safe to mutate
+ */
+const normalizeIndex = (content) => {
+    if (!content || typeof content !== 'object') return emptyIndex();
+
+    let index = content;
+
+    if (!index._metadata && !index._files && !index._search) {
+        console.log('Legacy index format detected, migrating to v2.0');
+
+        const legacyContent = index;
+        index = emptyIndex();
+
+        // Legacy form carried no type information
+        for (const [filename, key] of Object.entries(legacyContent)) {
+            index._files[filename] = { key: key, object_type: '' };
+
+            if (key) {
+                if (!index._search.by_key[key]) index._search.by_key[key] = [];
+                index._search.by_key[key].push(filename);
+            }
+        }
+
+        return index;
+    }
+
+    if (!index._metadata) index._metadata = emptyIndex()._metadata;
+    if (!index._files) index._files = {};
+    if (!index._search) index._search = { by_key: {}, by_type: {} };
+    if (!index._search.by_key) index._search.by_key = {};
+    if (!index._search.by_type) index._search.by_type = {};
+
+    return index;
+};
+
+const dropFromBucket = (bucket, value, fileName) => {
+    if (!value || !bucket[value]) return;
+
+    bucket[value] = bucket[value].filter(f => f !== fileName);
+    if (bucket[value].length === 0) delete bucket[value];
+};
+
+const addToBucket = (bucket, value, fileName) => {
+    if (!value) return;
+
+    if (!bucket[value]) bucket[value] = [];
+    if (!bucket[value].includes(fileName)) bucket[value].push(fileName);
+};
+
+/**
+ * Records one concept file in the index, replacing any previous entry for that file.
+ *
+ * @param {Object} index - A normalized index, mutated in place
+ * @param {string} fileName - Bare file name, no directory component
+ * @param {Object} concept - Parsed concept object
+ * @returns {Object} The same index
+ */
+const applyUpdate = (index, fileName, concept) => {
+    const key = concept?.['key'] || '';
+    const objectType = concept?.['object_type'] || '';
+
+    const existing = index._files[fileName];
+    if (existing) {
+        dropFromBucket(index._search.by_key, existing.key, fileName);
+        dropFromBucket(index._search.by_type, existing.object_type, fileName);
+    }
+
+    index._files[fileName] = { key: key, object_type: objectType };
+
+    addToBucket(index._search.by_key, key, fileName);
+    addToBucket(index._search.by_type, objectType, fileName);
+
+    return index;
+};
+
+/**
+ * Removes one concept file from the index.
+ *
+ * @param {Object} index - A normalized index, mutated in place
+ * @param {string} fileName - Bare file name, no directory component
+ * @returns {Object} The same index
+ */
+const applyRemoval = (index, fileName) => {
+    const existing = index._files[fileName];
+    if (!existing) return index;
+
+    delete index._files[fileName];
+    dropFromBucket(index._search.by_key, existing.key, fileName);
+    dropFromBucket(index._search.by_type, existing.object_type, fileName);
+
+    return index;
+};
+
+/**
+ * Refreshes derived metadata. Call once after all updates and removals are applied.
+ *
+ * @param {Object} index - A normalized index, mutated in place
+ * @returns {Object} The same index
+ */
+const finalizeIndex = (index) => {
+    index._metadata.last_updated = new Date().toISOString();
+    index._metadata.total_files = Object.keys(index._files).length;
+
+    return index;
+};
+
+const baseName = (filePath) => filePath.substring(filePath.lastIndexOf('/') + 1);
+
+/**
+ * Reads and normalizes index.json.
+ *
+ * @returns {Promise<Object>} `{ index, sha }`; both null when the file does not exist yet
+ */
+const readIndex = async (octokit, owner, repo, indexPath = 'index.json') => {
+    try {
+        const response = await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
+            owner,
+            repo,
+            path: indexPath,
+            headers: {
+                'X-GitHub-Api-Version': API_VERSION,
+            },
+        });
+
+        const data = Buffer.from(response.data.content, 'base64').toString('utf-8');
+
+        return { index: normalizeIndex(JSON.parse(data)), sha: response.data.sha };
+    } catch (error) {
+        if (error.status !== 404) throw error;
+
+        return { index: null, sha: null };
+    }
+};
+
 const manageIndexFile = async (octokit, owner, repo, filePath, fileType, operation, fileContent = null) => {
     try {
         const indexPath = `${fileType}.json`;
 
-        let content = {};
-        let sha = null;
+        const { index: storedIndex, sha } = await readIndex(octokit, owner, repo, indexPath);
 
-        // Fetch the existing index file (if it exists)
-        try {
-            const response = await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
-                owner,
-                repo,
-                path: indexPath,
-                headers: {
-                    'X-GitHub-Api-Version': API_VERSION,
-                },
-            });
+        // Nothing to remove from an index that does not exist yet
+        if (!storedIndex && operation === 'remove') return;
 
-            const data = Buffer.from(response.data.content, 'base64').toString('utf-8');
-            content = JSON.parse(data);
-            sha = response.data.sha;
-
-            // Detect if this is legacy format (no _metadata, _files, _search)
-            if (!content._metadata && !content._files && !content._search) {
-                console.log('Legacy index format detected, migrating to v2.0');
-
-                const legacyContent = content;
-                content = emptyIndex();
-
-                // Migrate existing entries (legacy format: {filename: key})
-                for (const [filename, key] of Object.entries(legacyContent)) {
-                    content._files[filename] = {
-                        key: key,
-                        object_type: '' // Unknown in legacy format
-                    };
-
-                    if (key) {
-                        if (!content._search.by_key[key]) {
-                            content._search.by_key[key] = [];
-                        }
-                        content._search.by_key[key].push(filename);
-                    }
-                }
-            }
-        } catch (error) {
-            if (error.status !== 404) {
-                throw error;
-            }
-            // For remove operation, exit early if file doesn't exist
-            if (operation === 'remove') {
-                return;
-            }
-
-            content = emptyIndex();
-        }
-
-        // Ensure content has the v2.0 structure
-        if (!content._metadata) {
-            content._metadata = emptyIndex()._metadata;
-        }
-        if (!content._files) content._files = {};
-        if (!content._search) content._search = { by_key: {}, by_type: {} };
-        if (!content._search.by_key) content._search.by_key = {};
-        if (!content._search.by_type) content._search.by_type = {};
-
-        const fileName = filePath.substring(filePath.lastIndexOf('/') + 1);
+        const content = storedIndex || emptyIndex();
+        const fileName = baseName(filePath);
 
         if (operation === 'update') {
             const fileData = Buffer.from(fileContent, 'base64').toString('utf-8');
-            const fileJson = JSON.parse(fileData);
-
-            const key = fileJson['key'] || '';
-            const objectType = fileJson['object_type'] || '';
-
-            // If this file already exists, remove it from old search indexes first
-            if (content._files[fileName]) {
-                const oldKey = content._files[fileName].key;
-                const oldType = content._files[fileName].object_type;
-
-                if (oldKey && content._search.by_key[oldKey]) {
-                    content._search.by_key[oldKey] = content._search.by_key[oldKey].filter(f => f !== fileName);
-                    if (content._search.by_key[oldKey].length === 0) {
-                        delete content._search.by_key[oldKey];
-                    }
-                }
-
-                if (oldType && content._search.by_type[oldType]) {
-                    content._search.by_type[oldType] = content._search.by_type[oldType].filter(f => f !== fileName);
-                    if (content._search.by_type[oldType].length === 0) {
-                        delete content._search.by_type[oldType];
-                    }
-                }
-            }
-
-            content._files[fileName] = {
-                key: key,
-                object_type: objectType
-            };
-
-            if (key) {
-                if (!content._search.by_key[key]) {
-                    content._search.by_key[key] = [];
-                }
-                if (!content._search.by_key[key].includes(fileName)) {
-                    content._search.by_key[key].push(fileName);
-                }
-            }
-
-            if (objectType) {
-                if (!content._search.by_type[objectType]) {
-                    content._search.by_type[objectType] = [];
-                }
-                if (!content._search.by_type[objectType].includes(fileName)) {
-                    content._search.by_type[objectType].push(fileName);
-                }
-            }
-
+            applyUpdate(content, fileName, JSON.parse(fileData));
         } else if (operation === 'remove') {
-            const fileMetadata = content._files[fileName];
-
-            if (fileMetadata) {
-                const key = fileMetadata.key;
-                const objectType = fileMetadata.object_type;
-
-                delete content._files[fileName];
-
-                if (key && content._search.by_key[key]) {
-                    content._search.by_key[key] = content._search.by_key[key].filter(f => f !== fileName);
-                    if (content._search.by_key[key].length === 0) {
-                        delete content._search.by_key[key];
-                    }
-                }
-
-                if (objectType && content._search.by_type[objectType]) {
-                    content._search.by_type[objectType] = content._search.by_type[objectType].filter(f => f !== fileName);
-                    if (content._search.by_type[objectType].length === 0) {
-                        delete content._search.by_type[objectType];
-                    }
-                }
-            }
+            applyRemoval(content, fileName);
         }
 
-        content._metadata.last_updated = new Date().toISOString();
-        content._metadata.total_files = Object.keys(content._files).length;
+        finalizeIndex(content);
 
         const commitMessage = operation === 'update' ?
             `Update ${fileType}.json for ${filePath}` :
@@ -188,5 +202,12 @@ const manageIndexFile = async (octokit, owner, repo, filePath, fileType, operati
 };
 
 module.exports = {
-    manageIndexFile
+    manageIndexFile,
+    emptyIndex,
+    normalizeIndex,
+    applyUpdate,
+    applyRemoval,
+    finalizeIndex,
+    readIndex,
+    baseName
 };
