@@ -250,11 +250,13 @@ const ghauth = async (req, res) => {
                 auth: token
             });
 
-            const { owner, repo } = req.query;
+            const { owner, repo, ref } = req.query;
 
+            // An omitted ref expands to an empty path segment, which GitHub reads as the default branch.
             const response = await octokit.request('GET /repos/{owner}/{repo}/zipball/{ref}', {
                 owner,
                 repo,
+                ref: ref || '',
                 headers: {
                   'X-GitHub-Api-Version': '2022-11-28'
                 }
@@ -262,7 +264,7 @@ const ghauth = async (req, res) => {
 
             const zipData = Buffer.from(response.data);
 
-            logRequest({ api, status: 200, startedAt, rateLimit: extractRateLimit(response) });
+            logRequest({ api, status: 200, startedAt, rateLimit: extractRateLimit(response), bytes: zipData.length });
             res.set('Content-Type', 'application/zip');
             res.status(200).send(zipData);
         } catch (error) {
@@ -572,9 +574,12 @@ const ghauth = async (req, res) => {
                 .map(entry => ({ path: entry.path, sha: entry.sha, size: entry.size }));
 
             const rateLimit = extractRateLimit(response);
-            logRequest({ api, status: 200, startedAt, rateLimit });
+            logRequest({ api, status: 200, startedAt, rateLimit, entries: data.length, truncated: response.data.truncated === true });
             res.status(200).json({
                 data,
+                // Tree SHA, not commit SHA: this changes only when file content changes,
+                // so it is the cache key clients should key concept data on.
+                sha: response.data.sha,
                 truncated: response.data.truncated === true,
                 status: response.status,
                 rateLimit
@@ -583,7 +588,7 @@ const ghauth = async (req, res) => {
             // 409 is GitHub's "Git Repository is empty" — a new repo, not a failure
             if (error.status === 409) {
                 logRequest({ api, status: 200, startedAt, error: 'Empty repository' });
-                return res.status(200).json({ data: [], truncated: false, status: 200 });
+                return res.status(200).json({ data: [], sha: null, truncated: false, status: 200 });
             }
 
             return sendError(res, api, startedAt, error);

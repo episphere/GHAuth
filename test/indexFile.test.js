@@ -8,6 +8,7 @@ const {
     applyRemoval,
     finalizeIndex,
     readIndex,
+    manageIndexFile,
     baseName
 } = require('../domain/indexFile');
 
@@ -170,4 +171,79 @@ test('readIndex returns the metadata response so callers can read rate limit hea
     const { response } = await readIndex(fakeOctokit([metadata]), 'o', 'r');
 
     assert.strictEqual(response, metadata);
+});
+
+/**
+ * Stand-in for the read-then-write pair manageIndexFile performs, recording the PUT.
+ */
+const fakeIndexStore = (index) => {
+    const puts = [];
+
+    return {
+        puts,
+        request: async (route, options) => {
+            if (route === 'PUT /repos/{owner}/{repo}/contents/{path}') {
+                puts.push(options);
+                return { data: {} };
+            }
+
+            if (!index) throw Object.assign(new Error('Not Found'), { status: 404 });
+
+            const body = JSON.stringify(index);
+            return {
+                data: {
+                    sha: 'existing-sha',
+                    size: body.length,
+                    encoding: 'base64',
+                    content: Buffer.from(body).toString('base64')
+                }
+            };
+        }
+    };
+};
+
+const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64');
+const decodePut = (put) => JSON.parse(Buffer.from(put.content, 'base64').toString('utf-8'));
+
+test('manageIndexFile creates the index when none exists yet', async () => {
+    const octokit = fakeIndexStore(null);
+
+    await manageIndexFile(octokit, 'o', 'r', '1.json', 'index', 'update', encode({ key: 'age', object_type: 'QUESTION' }));
+
+    assert.strictEqual(octokit.puts.length, 1);
+    // No sha means "create"; sending one for a file that does not exist would 422
+    assert.strictEqual(octokit.puts[0].sha, undefined);
+    assert.deepStrictEqual(decodePut(octokit.puts[0])._files['1.json'], { key: 'age', object_type: 'QUESTION' });
+});
+
+test('manageIndexFile sends the existing sha when updating', async () => {
+    const octokit = fakeIndexStore({ _files: {} });
+
+    await manageIndexFile(octokit, 'o', 'r', '1.json', 'index', 'update', encode({ key: 'age', object_type: 'QUESTION' }));
+
+    assert.strictEqual(octokit.puts[0].sha, 'existing-sha');
+    assert.match(octokit.puts[0].message, /Update index\.json for 1\.json/);
+});
+
+test('manageIndexFile removes an entry and its search buckets', async () => {
+    const octokit = fakeIndexStore({
+        _files: { '1.json': { key: 'age', object_type: 'QUESTION' } },
+        _search: { by_key: { age: ['1.json'] }, by_type: { QUESTION: ['1.json'] } }
+    });
+
+    await manageIndexFile(octokit, 'o', 'r', '1.json', 'index', 'remove');
+
+    const written = decodePut(octokit.puts[0]);
+
+    assert.ok(!written._files['1.json']);
+    assert.ok(!written._search.by_key.age);
+    assert.match(octokit.puts[0].message, /after deleting 1\.json/);
+});
+
+test('manageIndexFile writes nothing when removing from an index that does not exist', async () => {
+    const octokit = fakeIndexStore(null);
+
+    await manageIndexFile(octokit, 'o', 'r', '1.json', 'index', 'remove');
+
+    assert.strictEqual(octokit.puts.length, 0);
 });
