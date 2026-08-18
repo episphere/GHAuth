@@ -128,6 +128,10 @@ const baseName = (filePath) => filePath.substring(filePath.lastIndexOf('/') + 1)
 /**
  * Reads and normalizes index.json.
  *
+ * The contents API returns metadata with an EMPTY body and HTTP 200 once a file passes
+ * 1MB, so the oversized case has to be detected and re-read through the raw media type,
+ * which serves up to 100MB. The first call is still needed for the sha, which raw omits.
+ *
  * @returns {Promise<Object>} `{ index, sha }`; both null when the file does not exist yet
  */
 const readIndex = async (octokit, owner, repo, indexPath = 'index.json') => {
@@ -141,9 +145,35 @@ const readIndex = async (octokit, owner, repo, indexPath = 'index.json') => {
             },
         });
 
-        const data = Buffer.from(response.data.content, 'base64').toString('utf-8');
+        const sha = response.data.sha;
+        const oversized = response.data.encoding === 'none' || (!response.data.content && response.data.size > 0);
 
-        return { index: normalizeIndex(JSON.parse(data)), sha: response.data.sha };
+        let text = oversized
+            ? ''
+            : Buffer.from(response.data.content || '', 'base64').toString('utf-8');
+
+        if (oversized) {
+            const raw = await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
+                owner,
+                repo,
+                path: indexPath,
+                headers: {
+                    'X-GitHub-Api-Version': API_VERSION,
+                    accept: 'application/vnd.github.raw'
+                },
+            });
+
+            text = typeof raw.data === 'string' ? raw.data : JSON.stringify(raw.data);
+
+            // Never let an unreadable index look like an empty one: that reads as total data loss
+            if (!text.trim()) {
+                throw new Error(`${indexPath} is ${response.data.size} bytes but could not be read`);
+            }
+        }
+
+        if (!text.trim()) return { index: emptyIndex(), sha };
+
+        return { index: normalizeIndex(JSON.parse(text)), sha };
     } catch (error) {
         if (error.status !== 404) throw error;
 

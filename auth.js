@@ -11,7 +11,7 @@ const { extractRateLimit } = require('./lib/rateLimit');
 const { logRequest } = require('./lib/logging');
 const { fetchSecrets } = require('./lib/secrets');
 const { API_VERSION, createClient, getFile, createFile, toBase64 } = require('./lib/github');
-const { manageIndexFile } = require('./domain/indexFile');
+const { manageIndexFile, readIndex, baseName } = require('./domain/indexFile');
 const { commitFiles } = require('./domain/gitData');
 const { getBaseConfig } = require('./domain/config');
 const { generateConceptID } = require('./domain/conceptId');
@@ -467,32 +467,27 @@ const ghauth = async (req, res) => {
                 auth: token
             });
 
-            const response = await octokit.request(`GET /repos/{owner}/{repo}/contents/{path}`, {
-                owner,
-                repo,
-                path,
-                headers: {
-                  'X-GitHub-Api-Version': '2022-11-28'
-                }
-            });
+            // readIndex handles the >1MB case, where the contents API returns an empty body with a 200
+            const { index } = await readIndex(octokit, owner, repo, path);
 
-
-            // get keys from response file json
-            const file = Buffer.from(response.data.content, 'base64').toString('utf-8');
-            const content = JSON.parse(file);
-            const keys = Object.keys(content);
-
-            let flag = true;
-            let conceptID;
-
-            while (flag) {
-                conceptID = generateConceptID();
-                if (!keys.includes(conceptID.toString())) {
-                    flag = false;
-                }
+            if (index === null) {
+                const error = new Error('Index file not found');
+                error.status = 404;
+                throw error;
             }
 
-            logRequest({ api, status: 200, startedAt, rateLimit: extractRateLimit(response) });
+            // Keys are file names ("123456789.json"); compare against the bare ID
+            const taken = new Set(
+                Object.keys(index._files || {}).map(name => baseName(name).replace(/\.json$/i, ''))
+            );
+
+            let conceptID;
+
+            do {
+                conceptID = generateConceptID();
+            } while (taken.has(conceptID.toString()));
+
+            logRequest({ api, status: 200, startedAt });
             res.status(200).json({ conceptID });
         } catch (error) {
             if (error.status === 404) {

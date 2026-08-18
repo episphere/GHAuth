@@ -7,8 +7,29 @@ const {
     applyUpdate,
     applyRemoval,
     finalizeIndex,
+    readIndex,
     baseName
 } = require('../domain/indexFile');
+
+/**
+ * Stands in for octokit.request, returning each queued response in order and
+ * recording the accept header so the raw fallback can be asserted.
+ */
+const fakeOctokit = (responses) => {
+    const accepts = [];
+
+    return {
+        accepts,
+        request: async (_route, options) => {
+            accepts.push(options.headers?.accept);
+
+            const next = responses.shift();
+            if (next instanceof Error) throw next;
+
+            return next;
+        }
+    };
+};
 
 test('normalizeIndex returns an empty index for missing content', () => {
     const index = normalizeIndex(null);
@@ -95,4 +116,46 @@ test('finalizeIndex recounts files', () => {
 test('baseName strips any directory component', () => {
     assert.strictEqual(baseName('123.json'), '123.json');
     assert.strictEqual(baseName('nested/dir/123.json'), '123.json');
+});
+
+test('readIndex decodes a normal base64 response in a single request', async () => {
+    const body = JSON.stringify({ _files: { '1.json': { key: 'a', object_type: 'PRIMARY' } } });
+    const octokit = fakeOctokit([
+        { data: { sha: 'abc', size: body.length, encoding: 'base64', content: Buffer.from(body).toString('base64') } }
+    ]);
+
+    const { index, sha } = await readIndex(octokit, 'o', 'r');
+
+    assert.strictEqual(sha, 'abc');
+    assert.deepStrictEqual(index._files['1.json'], { key: 'a', object_type: 'PRIMARY' });
+    assert.deepStrictEqual(octokit.accepts, [undefined]);
+});
+
+test('readIndex re-reads through the raw media type when the file exceeds 1MB', async () => {
+    const body = JSON.stringify({ _files: { '1.json': { key: 'a', object_type: 'PRIMARY' } } });
+    const octokit = fakeOctokit([
+        { data: { sha: 'big', size: 1500000, encoding: 'none', content: '' } },
+        { data: body }
+    ]);
+
+    const { index, sha } = await readIndex(octokit, 'o', 'r');
+
+    assert.strictEqual(sha, 'big', 'sha comes from the metadata call, since raw does not return one');
+    assert.deepStrictEqual(index._files['1.json'], { key: 'a', object_type: 'PRIMARY' });
+    assert.strictEqual(octokit.accepts[1], 'application/vnd.github.raw');
+});
+
+test('readIndex throws rather than reporting an oversized index as empty', async () => {
+    const octokit = fakeOctokit([
+        { data: { sha: 'big', size: 1500000, encoding: 'none', content: '' } },
+        { data: '' }
+    ]);
+
+    await assert.rejects(() => readIndex(octokit, 'o', 'r'), /could not be read/);
+});
+
+test('readIndex reports a missing index as null instead of throwing', async () => {
+    const notFound = Object.assign(new Error('Not Found'), { status: 404 });
+
+    assert.deepStrictEqual(await readIndex(fakeOctokit([notFound]), 'o', 'r'), { index: null, sha: null });
 });
