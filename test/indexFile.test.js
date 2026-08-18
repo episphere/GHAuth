@@ -157,5 +157,17 @@ test('readIndex throws rather than reporting an oversized index as empty', async
 test('readIndex reports a missing index as null instead of throwing', async () => {
     const notFound = Object.assign(new Error('Not Found'), { status: 404 });
 
-    assert.deepStrictEqual(await readIndex(fakeOctokit([notFound]), 'o', 'r'), { index: null, sha: null });
+    assert.deepStrictEqual(
+        await readIndex(fakeOctokit([notFound]), 'o', 'r'),
+        { index: null, sha: null, response: null }
+    );
+});
+
+test('readIndex returns the metadata response so callers can read rate limit headers', async () => {
+    const body = JSON.stringify({ _files: {} });
+    const metadata = { data: { sha: 'abc', size: body.length, encoding: 'base64', content: Buffer.from(body).toString('base64') } };
+
+    const { response } = await readIndex(fakeOctokit([metadata]), 'o', 'r');
+
+    assert.strictEqual(response, metadata);
 });

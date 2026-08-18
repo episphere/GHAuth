@@ -132,7 +132,7 @@ const baseName = (filePath) => filePath.substring(filePath.lastIndexOf('/') + 1)
  * 1MB, so the oversized case has to be detected and re-read through the raw media type,
  * which serves up to 100MB. The first call is still needed for the sha, which raw omits.
  *
- * @returns {Promise<Object>} `{ index, sha }`; both null when the file does not exist yet
+ * @returns {Promise<Object>} `{ index, sha, response }`; index/sha null when the file does not exist yet
  */
 const readIndex = async (octokit, owner, repo, indexPath = 'index.json') => {
     try {
@@ -171,13 +171,13 @@ const readIndex = async (octokit, owner, repo, indexPath = 'index.json') => {
             }
         }
 
-        if (!text.trim()) return { index: emptyIndex(), sha };
+        if (!text.trim()) return { index: emptyIndex(), sha, response };
 
-        return { index: normalizeIndex(JSON.parse(text)), sha };
+        return { index: normalizeIndex(JSON.parse(text)), sha, response };
     } catch (error) {
         if (error.status !== 404) throw error;
 
-        return { index: null, sha: null };
+        return { index: null, sha: null, response: null };
     }
 };
 

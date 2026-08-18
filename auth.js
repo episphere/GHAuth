@@ -172,7 +172,7 @@ const ghauth = async (req, res) => {
 
             const { owner, repo, branch, message, files, deletions } = req.body;
 
-            const result = await commitFiles({
+            const { lastResponse, ...result } = await commitFiles({
                 octokit,
                 owner,
                 repo,
@@ -182,8 +182,10 @@ const ghauth = async (req, res) => {
                 deletions: deletions || []
             });
 
-            logRequest({ api, status: 200, startedAt, files: result.committed, deleted: result.deleted });
-            res.status(200).json({ ...result, status: 200 });
+            const rateLimit = extractRateLimit(lastResponse);
+
+            logRequest({ api, status: 200, startedAt, rateLimit, files: result.committed, deleted: result.deleted, writes: result.writes });
+            res.status(200).json({ ...result, status: 200, rateLimit });
         } catch (error) {
             return sendError(res, api, startedAt, error);
         }
@@ -468,7 +470,7 @@ const ghauth = async (req, res) => {
             });
 
             // readIndex handles the >1MB case, where the contents API returns an empty body with a 200
-            const { index } = await readIndex(octokit, owner, repo, path);
+            const { index, response } = await readIndex(octokit, owner, repo, path);
 
             if (index === null) {
                 const error = new Error('Index file not found');
@@ -487,8 +489,10 @@ const ghauth = async (req, res) => {
                 conceptID = generateConceptID();
             } while (taken.has(conceptID.toString()));
 
-            logRequest({ api, status: 200, startedAt });
-            res.status(200).json({ conceptID });
+            const rateLimit = extractRateLimit(response);
+
+            logRequest({ api, status: 200, startedAt, rateLimit });
+            res.status(200).json({ conceptID, rateLimit });
         } catch (error) {
             if (error.status === 404) {
 
@@ -518,16 +522,20 @@ const ghauth = async (req, res) => {
         try {
             const response = await getFile(token, owner, repo, path);
 
-            logRequest({ api, status: 200, startedAt, rateLimit: extractRateLimit(response) });
-            res.status(200).json({ data: response.data, status: response.status });
+            const rateLimit = extractRateLimit(response);
+
+            logRequest({ api, status: 200, startedAt, rateLimit });
+            res.status(200).json({ data: response.data, status: response.status, rateLimit });
         } catch (error) {
 
             if (error.status === 404) {
 
                 const content = JSON.stringify(getBaseConfig(), null, 2);
                 const fileResponse = await createFile(token, owner, repo, path, toBase64(content), 'Create config file');
-                logRequest({ api, status: 200, startedAt, error: 'Config missing - created' });
-                return res.status(200).json({ data: fileResponse.data, status: fileResponse.status });
+                const rateLimit = extractRateLimit(fileResponse);
+
+                logRequest({ api, status: 200, startedAt, rateLimit, error: 'Config missing - created' });
+                return res.status(200).json({ data: fileResponse.data, status: fileResponse.status, rateLimit });
             }
             
             return sendError(res, api, startedAt, error);

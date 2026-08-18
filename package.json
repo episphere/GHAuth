@@ -5,16 +5,17 @@
   "main": "index.js",
   "scripts": {
     "test": "node --test test/*.test.js",
+    "lint": "eslint .",
     "start": "functions-framework --target=ghauth --port=8080"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@google-cloud/secret-manager": "^5.1.0",
-    "@octokit/rest": "^22.0.0",
     "octokit": "^3.1.2"
   },
   "devDependencies": {
-    "@google-cloud/functions-framework": "^3.4.0"
+    "@google-cloud/functions-framework": "^3.4.0",
+    "eslint": "^9.39.5"
   }
 }

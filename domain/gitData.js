@@ -7,6 +7,9 @@ const MAX_ENTRIES_PER_COMMIT = 1000;
 
 const BLOB_MODE = '100644';
 
+// trees + commits + refs. Counts against the 500/hour secondary limit, not the primary one.
+const WRITES_PER_COMMIT = 3;
+
 // A ref moves under us only when another editor commits mid-batch.
 const MAX_REF_RETRIES = 3;
 
@@ -149,8 +152,10 @@ const commitFiles = async ({ octokit, owner, repo, branch, message, files = [], 
             headers: { 'X-GitHub-Api-Version': API_VERSION }
         });
 
+        let refResponse;
+
         try {
-            await octokit.request('PATCH /repos/{owner}/{repo}/git/refs/{ref}', {
+            refResponse = await octokit.request('PATCH /repos/{owner}/{repo}/git/refs/{ref}', {
                 owner,
                 repo,
                 ref: `heads/${branch}`,
@@ -167,7 +172,7 @@ const commitFiles = async ({ octokit, owner, repo, branch, message, files = [], 
 
             // A repo with no commits yet has no ref to patch
             if (error.status === 422 && !baseCommitSha) {
-                await octokit.request('POST /repos/{owner}/{repo}/git/refs', {
+                refResponse = await octokit.request('POST /repos/{owner}/{repo}/git/refs', {
                     owner,
                     repo,
                     ref: `refs/heads/${branch}`,
@@ -183,7 +188,9 @@ const commitFiles = async ({ octokit, owner, repo, branch, message, files = [], 
             commitSha: createdCommit.data.sha,
             treeSha: createdTree.data.sha,
             committed: files.length,
-            deleted: deletions.length
+            deleted: deletions.length,
+            writes: WRITES_PER_COMMIT,
+            lastResponse: refResponse
         };
     }
 
@@ -195,5 +202,6 @@ const commitFiles = async ({ octokit, owner, repo, branch, message, files = [], 
 
 module.exports = {
     commitFiles,
-    MAX_ENTRIES_PER_COMMIT
+    MAX_ENTRIES_PER_COMMIT,
+    WRITES_PER_COMMIT
 };
